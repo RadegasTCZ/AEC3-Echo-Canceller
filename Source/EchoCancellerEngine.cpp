@@ -1,19 +1,18 @@
 #include "EchoCancellerEngine.h"
 #include "WasapiLoopbackCapture.h"
 
-#include "api/echo_canceller3_factory.h"
-#include "api/echo_canceller3_config.h"
-#include "audio_processing/audio_buffer.h"
-#include "audio_processing/high_pass_filter.h"
-#include "audio_processing/include/audio_processing.h"
+#include "api/audio/echo_canceller3_factory.h"
+#include "api/audio/echo_canceller3_config.h"
+#include "api/audio/audio_processing.h"
+#include "api/environment/environment_factory.h"
+#include "modules/audio_processing/audio_buffer.h"
+#include "modules/audio_processing/high_pass_filter.h"
 
 #include <algorithm>
 #include <cstring>
 
-// Link AEC3 static libraries (MSVC)
+// Link AEC3 static library (MSVC)
 #pragma comment(lib, "AEC3.lib")
-#pragma comment(lib, "base.lib")
-#pragma comment(lib, "api.lib")
 
 using namespace webrtc;
 
@@ -48,8 +47,9 @@ void EchoCancellerEngine::createAEC3 (bool aggressive)
         config.ep_strength.bounded_erl = true;
     }
 
+    auto env = webrtc::CreateEnvironment();
     EchoCanceller3Factory factory (config);
-    echoController = factory.Create (kAecRate, 1, 1);
+    echoController = factory.Create (env, kAecRate, 1, 1);
 
     // Create audio buffers for render (far-end) and capture (near-end)
     renderAudio = std::make_unique<AudioBuffer> (
@@ -227,7 +227,7 @@ void EchoCancellerEngine::process (const float* micIn, float* out, int numSample
     }
 
     // 3. Processing loop: while nearEnd has kAecFrameSize (480) samples
-    StreamConfig streamConfig (kAecRate, 1, false);
+    StreamConfig streamConfig (kAecRate, 1);
 
     while (nearEndFifo.getNumReady() >= kAecFrameSize)
     {

@@ -8,8 +8,9 @@ This project incorporates components from the following third-party projects.
 
 - **Source:** https://webrtc.googlesource.com/src/
 - **License:** BSD 3-Clause
-- **Usage:** Acoustic Echo Cancellation engine (AEC3) — headers, source files,
-  and pre-built static libraries included in `thirdparty/AEC3/`.
+- **Version:** 2026-03-11 source snapshot
+- **Usage:** Acoustic Echo Cancellation engine (AEC3) — headers and pre-built
+  static library included in `thirdparty/AEC3/`.
 
 ```
 Copyright (c) 2011, The WebRTC project authors. All rights reserved.
@@ -46,8 +47,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - **Source:** https://github.com/abseil/abseil-cpp
 - **License:** Apache License 2.0
-- **Usage:** C++ utility library bundled with AEC3 headers in
-  `thirdparty/AEC3/base/abseil/`.
+- **Usage:** C++ utility library statically linked into `AEC3.lib`.
+  Headers included in `thirdparty/AEC3/base/abseil/`.
 
 ```
 Copyright 2017 The Abseil Authors.
