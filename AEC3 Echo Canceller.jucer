@@ -47,7 +47,7 @@
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
     <VS2026 targetFolder="Builds/VisualStudio2026" extraDefs="WEBRTC_WIN&#10;NOMINMAX&#10;WIN32_LEAN_AND_MEAN&#10;RTC_DISABLE_METRICS&#10;WEBRTC_APM_DEBUG_DUMP=0"
-            cppLanguageStandard="20" extraCompilerFlags="/I&quot;E:\Workspace 03\webrtc&quot; /I&quot;E:\Workspace 03\AEC3-build\abseil-cpp&quot;">
+            cppLanguageStandard="20" extraCompilerFlags="/I&quot;..\..\thirdparty\AEC3&quot;">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="AEC3 Echo Canceller" libraryPath="..\..\thirdparty\AEC3\lib"
                        externalLibraries="AEC3.lib"/>
