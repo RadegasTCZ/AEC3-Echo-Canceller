@@ -11,6 +11,11 @@
 #include <algorithm>
 #include <cstring>
 
+// AEC3.lib is built in Release mode only — Debug builds will fail with CRT mismatches
+#if defined(_MSC_VER) && defined(_DEBUG)
+#error "AEC3.lib requires Release configuration. Switch to Release|x64 to build."
+#endif
+
 // Link AEC3 static library (MSVC)
 #pragma comment(lib, "AEC3.lib")
 
