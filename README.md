@@ -5,8 +5,15 @@ A VST/VST3 plugin for real-time acoustic echo cancellation using Google's WebRTC
 ## Features
 - Real-time echo cancellation powered by WebRTC AEC3
 - WASAPI loopback capture for far-end reference (captures system audio output)
-- Normal and Aggressive mode (tuned for speaker setups)
+- 18 granular suppression controls for both normal and double-talk modes
+- Presets: Default, Aggressive, Transparent, Voice Chat + Factory Reset
+- WASAPI device selection with automatic device change detection
+- Spectrum analyzer (16-band, -100 to -10 dB)
+- Peak meters for input, output, and reference signals
+- Latency compensation slider (0–200 ms) for wireless mics / ASIO routing
+- Room reverberance, conservative echo estimation, and clock drift controls
 - Monitor Capture mode for verifying the loopback signal
+- Stereo-to-mono input downmix
 - Works at any host sample rate (internal resampling to 48kHz)
 - Auto-reconnect on audio device changes
 - Compatible with all major DAWs and audio hosts
@@ -16,7 +23,8 @@ A VST/VST3 plugin for real-time acoustic echo cancellation using Google's WebRTC
 ### Requirements
 - Windows 10/11
 - [JUCE 8](https://juce.com) (Projucer)
-- Visual Studio 2022 or later (C++17, x64)
+- Visual Studio 2022 or later (C++20, x64)
+- Build configuration: **Release x64 only** (AEC3.lib is Release-built)
 
 ### Steps
 1. Clone this repository
@@ -25,9 +33,9 @@ A VST/VST3 plugin for real-time acoustic echo cancellation using Google's WebRTC
 4. Update module paths if your JUCE install differs from `C:/JUCE8/modules`
 5. Save/export the project
 6. Open the generated Visual Studio solution in `Builds/VisualStudio2026/`
-7. Build Release x64
+7. Build **Release x64** (Debug builds are blocked — AEC3.lib requires Release CRT)
 
-The `thirdparty/AEC3/` directory contains all required headers and pre-built static libraries — no additional dependencies needed.
+The `thirdparty/AEC3/` directory contains all required headers and the pre-built static library — no additional dependencies needed.
 
 ## Credits & Licenses
 - This plugin uses [WebRTC AEC3](https://webrtc.googlesource.com/src/) © The WebRTC project authors (BSD-3-Clause).
