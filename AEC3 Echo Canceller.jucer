@@ -2,10 +2,10 @@
 
 <JUCERPROJECT id="dMynSa" name="AEC3 Echo Canceller" projectType="audioplug"
               useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
-              pluginVST3Category="External,Filter,Fx" version="3.0.0" companyName="RadOo - Personal project"
+              pluginVST3Category="External,Filter,Fx" version="4.0.0" companyName="RadOo - Personal project"
               companyCopyright="2026" companyWebsite="https://github.com/RadegasTCZ"
               companyEmail="radegast2321@gmail.com" pluginFormats="buildStandalone,buildVST,buildVST3"
-              pluginManufacturerCode="RDTV" pluginCode="AE3C" pluginName="AEC3 Echo Canceller v3.0.0"
+              pluginManufacturerCode="RDTV" pluginCode="AE3C" pluginName="AEC3 Echo Canceller v4.0.0"
               pluginDesc="AEC with WASAPI capture for real-time communication."
               cppLanguageStandard="20">
   <MAINGROUP id="Y9873e" name="AEC3 Echo Canceller">
@@ -39,6 +39,7 @@
     <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
@@ -68,6 +69,7 @@
         <MODULEPATH id="juce_graphics" path="C:/JUCE8/modules"/>
         <MODULEPATH id="juce_gui_basics" path="C:/JUCE8/modules"/>
         <MODULEPATH id="juce_gui_extra" path="C:/JUCE8/modules"/>
+        <MODULEPATH id="juce_dsp" path="C:/JUCE8/modules"/>
       </MODULEPATHS>
     </VS2026>
   </EXPORTFORMATS>

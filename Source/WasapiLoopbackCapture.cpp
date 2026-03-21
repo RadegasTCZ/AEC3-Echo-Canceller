@@ -45,15 +45,207 @@ struct AvrtScope
     ~AvrtScope() { if (task) AvRevertMmThreadCharacteristics (task); }
 };
 
+// ============================================================================
+// IMMNotificationClient implementation — COM callback for device changes
+// ============================================================================
+
+class DeviceNotificationClient : public IMMNotificationClient
+{
+public:
+    DeviceNotificationClient (WasapiLoopbackCapture& owner) : owner (owner) {}
+
+    // IUnknown
+    ULONG STDMETHODCALLTYPE AddRef() override  { return InterlockedIncrement (&refCount); }
+    ULONG STDMETHODCALLTYPE Release() override
+    {
+        ULONG r = InterlockedDecrement (&refCount);
+        if (r == 0) delete this;
+        return r;
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface (REFIID riid, void** ppv) override
+    {
+        if (riid == __uuidof (IUnknown) || riid == __uuidof (IMMNotificationClient))
+        {
+            *ppv = static_cast<IMMNotificationClient*> (this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    // IMMNotificationClient — flag device list change on any event
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged (LPCWSTR, DWORD) override
+    {
+        owner.deviceListChanged.store (true, std::memory_order_release);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded (LPCWSTR) override
+    {
+        owner.deviceListChanged.store (true, std::memory_order_release);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved (LPCWSTR) override
+    {
+        owner.deviceListChanged.store (true, std::memory_order_release);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged (EDataFlow, ERole, LPCWSTR) override
+    {
+        owner.deviceListChanged.store (true, std::memory_order_release);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged (LPCWSTR, const PROPERTYKEY) override
+    {
+        return S_OK;
+    }
+
+private:
+    WasapiLoopbackCapture& owner;
+    LONG refCount = 1;
+};
+
+// ============================================================================
+// WasapiLoopbackCapture
+// ============================================================================
+
 WasapiLoopbackCapture::WasapiLoopbackCapture()
     : Thread ("WASAPI Loopback")
 {
     ringBuffer.resize (ringBufferSize, 0);
+    registerNotificationClient();
 }
 
 WasapiLoopbackCapture::~WasapiLoopbackCapture()
 {
     stopCapture();
+    unregisterNotificationClient();
+}
+
+void WasapiLoopbackCapture::registerNotificationClient()
+{
+    ComScope com;
+    if (! com.ok)
+        return;
+
+    IMMDeviceEnumerator* enumeratorPtr = nullptr;
+    HRESULT hr = CoCreateInstance (__uuidof (MMDeviceEnumerator), nullptr,
+                                   CLSCTX_ALL, __uuidof (IMMDeviceEnumerator),
+                                   (void**) &enumeratorPtr);
+    if (FAILED (hr) || enumeratorPtr == nullptr)
+        return;
+
+    auto* client = new DeviceNotificationClient (*this);
+    hr = enumeratorPtr->RegisterEndpointNotificationCallback (client);
+
+    if (SUCCEEDED (hr))
+    {
+        deviceEnumerator = enumeratorPtr;
+        notificationClient = client;
+    }
+    else
+    {
+        client->Release();
+        enumeratorPtr->Release();
+    }
+}
+
+void WasapiLoopbackCapture::unregisterNotificationClient()
+{
+    if (deviceEnumerator != nullptr && notificationClient != nullptr)
+    {
+        auto* enumeratorPtr = static_cast<IMMDeviceEnumerator*> (deviceEnumerator);
+        auto* client = static_cast<IMMNotificationClient*> (notificationClient);
+        enumeratorPtr->UnregisterEndpointNotificationCallback (client);
+        client->Release();
+        enumeratorPtr->Release();
+        deviceEnumerator = nullptr;
+        notificationClient = nullptr;
+    }
+}
+
+void WasapiLoopbackCapture::setDeviceId (const juce::String& deviceId)
+{
+    {
+        const juce::ScopedLock sl (deviceIdLock);
+        if (selectedDeviceId == deviceId)
+            return;
+        selectedDeviceId = deviceId;
+    }
+    deviceChangeRequest.store (true, std::memory_order_release);
+}
+
+juce::String WasapiLoopbackCapture::getDeviceId() const
+{
+    const juce::ScopedLock sl (deviceIdLock);
+    return selectedDeviceId;
+}
+
+bool WasapiLoopbackCapture::hasDeviceListChanged()
+{
+    return deviceListChanged.exchange (false, std::memory_order_acq_rel);
+}
+
+std::vector<WasapiLoopbackCapture::DeviceInfo> WasapiLoopbackCapture::enumerateDevices()
+{
+    std::vector<DeviceInfo> result;
+
+    ComScope com;
+    if (! com.ok)
+        return result;
+
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    HRESULT hr = CoCreateInstance (__uuidof (MMDeviceEnumerator), nullptr,
+                                   CLSCTX_ALL, __uuidof (IMMDeviceEnumerator),
+                                   (void**) &enumerator);
+    if (FAILED (hr) || ! enumerator)
+        return result;
+
+    ComPtr<IMMDeviceCollection> collection;
+    hr = enumerator->EnumAudioEndpoints (eRender, DEVICE_STATE_ACTIVE, &collection);
+    if (FAILED (hr) || ! collection)
+        return result;
+
+    UINT count = 0;
+    collection->GetCount (&count);
+
+    for (UINT i = 0; i < count; ++i)
+    {
+        ComPtr<IMMDevice> device;
+        hr = collection->Item (i, &device);
+        if (FAILED (hr) || ! device)
+            continue;
+
+        // Get device ID
+        LPWSTR idStr = nullptr;
+        hr = device->GetId (&idStr);
+        if (FAILED (hr) || idStr == nullptr)
+            continue;
+
+        juce::String id (idStr);
+        CoTaskMemFree (idStr);
+
+        // Get friendly name
+        ComPtr<IPropertyStore> props;
+        hr = device->OpenPropertyStore (STGM_READ, &props);
+        juce::String name = id; // fallback
+
+        if (SUCCEEDED (hr) && props)
+        {
+            PROPVARIANT varName;
+            PropVariantInit (&varName);
+
+            hr = props->GetValue (PKEY_Device_FriendlyName, &varName);
+            if (SUCCEEDED (hr) && varName.vt == VT_LPWSTR && varName.pwszVal != nullptr)
+                name = juce::String (varName.pwszVal);
+
+            PropVariantClear (&varName);
+        }
+
+        result.push_back ({ id, name });
+    }
+
+    return result;
 }
 
 void WasapiLoopbackCapture::startCapture()
@@ -107,9 +299,11 @@ void WasapiLoopbackCapture::run()
     // AVRT priority — RAII will revert on any exit path
     AvrtScope avrt;
 
-    // Outer loop: reconnects when device errors out (e.g. after sleep/power-down)
+    // Outer loop: reconnects when device errors out or device change requested
     while (! threadShouldExit())
     {
+        deviceChangeRequest.store (false, std::memory_order_release);
+
         bool success = initAndCapture();
 
         if (threadShouldExit())
@@ -130,7 +324,7 @@ void WasapiLoopbackCapture::run()
 
 bool WasapiLoopbackCapture::initAndCapture()
 {
-    // Get the default audio render endpoint (what speakers are playing)
+    // Get the selected or default audio render endpoint
     ComPtr<IMMDeviceEnumerator> enumerator;
     HRESULT hr = CoCreateInstance (__uuidof (MMDeviceEnumerator), nullptr,
                                    CLSCTX_ALL, __uuidof (IMMDeviceEnumerator),
@@ -139,9 +333,24 @@ bool WasapiLoopbackCapture::initAndCapture()
         return false;
 
     ComPtr<IMMDevice> device;
-    hr = enumerator->GetDefaultAudioEndpoint (eRender, eConsole, &device);
-    if (FAILED (hr) || ! device)
-        return false;
+
+    // Try selected device first, fall back to default
+    {
+        const juce::ScopedLock sl (deviceIdLock);
+        if (selectedDeviceId.isNotEmpty())
+        {
+            hr = enumerator->GetDevice (selectedDeviceId.toWideCharPointer(), &device);
+            if (FAILED (hr) || ! device)
+                device.ptr = nullptr; // fall through to default
+        }
+    }
+
+    if (! device)
+    {
+        hr = enumerator->GetDefaultAudioEndpoint (eRender, eConsole, &device);
+        if (FAILED (hr) || ! device)
+            return false;
+    }
 
     ComPtr<IAudioClient> audioClient;
     hr = device->Activate (__uuidof (IAudioClient), CLSCTX_ALL, nullptr, (void**) &audioClient);
@@ -221,12 +430,12 @@ bool WasapiLoopbackCapture::initAndCapture()
     fifo.reset();
 
     // Capture loop — event-driven, no polling
-    while (! threadShouldExit())
+    while (! threadShouldExit() && ! deviceChangeRequest.load (std::memory_order_acquire))
     {
         // Wait for WASAPI to signal data ready, with 100ms timeout to check exit flag
         DWORD waitResult = WaitForSingleObject (captureEvent, 100);
 
-        if (threadShouldExit())
+        if (threadShouldExit() || deviceChangeRequest.load (std::memory_order_acquire))
             break;
 
         if (waitResult != WAIT_OBJECT_0 && waitResult != WAIT_TIMEOUT)
@@ -324,6 +533,10 @@ bool WasapiLoopbackCapture::initAndCapture()
         audioClient->Stop();
 
     CloseHandle (captureEvent);
+
+    // If device change was requested, return true (clean exit, immediate reconnect)
+    if (deviceChangeRequest.load (std::memory_order_acquire))
+        return true;
 
     // COM pointers released by RAII destructors when method returns
     return threadShouldExit(); // true = clean exit, false = error (will retry)
