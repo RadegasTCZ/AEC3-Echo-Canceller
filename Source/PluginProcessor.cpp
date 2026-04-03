@@ -51,7 +51,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         juce::NormalisableRange<float> (0.0f, 200.0f, 5.0f), 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "roomReverb", 1 }, "Room Reverberance",
-        juce::NormalisableRange<float> (1.0f, 40.0f, 1.0f), 13.0f));
+        juce::NormalisableRange<float> (13.0f, 40.0f, 1.0f), 13.0f));
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "boundedErl", 1 }, "Conservative Echo Estimation", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (

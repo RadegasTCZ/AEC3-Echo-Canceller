@@ -43,7 +43,7 @@ public:
         float dtLfDecay        = 25.0f;
 
         // System
-        float roomReverb       = 13.0f;   // 1-40 blocks
+        float roomReverb       = 13.0f;   // 13-40 blocks (AEC3 minimum is 13)
         bool  boundedErl       = false;
         bool  clockDrift       = false;
 
@@ -168,8 +168,20 @@ private:
     std::atomic<bool> monitorFarEnd { false };
     std::atomic<float> latencyCompMs { 0.0f };
 
+    // processBlock gap detection — audio thread only
+    int64_t lastProcessTicks = 0;
+    static constexpr double kGapThresholdMs = 100.0;
+
     // Factory reset — signalled by UI thread, executed by audio thread
     std::atomic<bool> resetRequested { false };
+
+    // AEC3 creation error — set by worker thread on exception, cleared by factory reset
+    std::atomic<bool> aec3Error { false };
+
+public:
+    bool hasError() const { return aec3Error.load (std::memory_order_acquire); }
+
+private:
 
     // Pending params from audio thread (debounced)
     Params pendingParams;

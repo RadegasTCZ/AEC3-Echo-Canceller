@@ -299,6 +299,9 @@ void WasapiLoopbackCapture::run()
     // AVRT priority — RAII will revert on any exit path
     AvrtScope avrt;
 
+    int backoffMs = 1000;
+    static constexpr int kMaxBackoffMs = 10000;
+
     // Outer loop: reconnects when device errors out or device change requested
     while (! threadShouldExit())
     {
@@ -309,15 +312,36 @@ void WasapiLoopbackCapture::run()
         if (threadShouldExit())
             break;
 
-        if (! success)
+        if (success)
         {
-            // Wait ~1 second before retry, checking for exit
+            // Clean exit (device change) — reset backoff, reconnect immediately
+            backoffMs = 1000;
+        }
+        else
+        {
+            // Error — wait with exponential backoff, checking for exit + device changes
             status.store (Status::Connecting, std::memory_order_release);
             capturedSampleRate.store (0, std::memory_order_release);
             capturedChannels.store (0, std::memory_order_release);
 
-            for (int i = 0; i < 200 && ! threadShouldExit(); ++i)
-                Thread::sleep (5);
+            int waited = 0;
+            while (waited < backoffMs && ! threadShouldExit())
+            {
+                // Device change or new device available → reset backoff and retry now
+                if (deviceChangeRequest.load (std::memory_order_acquire)
+                    || deviceListChanged.load (std::memory_order_acquire))
+                {
+                    backoffMs = 1000;
+                    break;
+                }
+
+                Thread::sleep (50);
+                waited += 50;
+                lastHeartbeatTicks.store (juce::Time::getHighResolutionTicks(),
+                                         std::memory_order_release);
+            }
+
+            backoffMs = std::min (backoffMs * 2, kMaxBackoffMs);
         }
     }
 }
@@ -429,9 +453,15 @@ bool WasapiLoopbackCapture::initAndCapture()
     // Reset ring buffer so stale data from a previous session isn't used
     fifo.reset();
 
+    bool wasCaptureActive = captureActive.load (std::memory_order_acquire);
+
     // Capture loop — event-driven, no polling
     while (! threadShouldExit() && ! deviceChangeRequest.load (std::memory_order_acquire))
     {
+        // Update heartbeat — we're alive even if waiting on WASAPI
+        lastHeartbeatTicks.store (juce::Time::getHighResolutionTicks(),
+                                 std::memory_order_release);
+
         // Wait for WASAPI to signal data ready, with 100ms timeout to check exit flag
         DWORD waitResult = WaitForSingleObject (captureEvent, 100);
 
@@ -440,6 +470,12 @@ bool WasapiLoopbackCapture::initAndCapture()
 
         if (waitResult != WAIT_OBJECT_0 && waitResult != WAIT_TIMEOUT)
             break; // unexpected error
+
+        // Check captureActive state transitions
+        bool active = captureActive.load (std::memory_order_acquire);
+        if (! wasCaptureActive && active)
+            fifo.reset(); // flush on resume — safe because we were the only writer and paused
+        wasCaptureActive = active;
 
         // Drain all available packets
         UINT32 packetLength = 0;
@@ -458,10 +494,20 @@ bool WasapiLoopbackCapture::initAndCapture()
             if (FAILED (hr))
                 break;
 
+            // When capture is paused, drain WASAPI but don't write to ring buffer
+            if (! active)
+            {
+                captureClient->ReleaseBuffer (numFrames);
+                hr = captureClient->GetNextPacketSize (&packetLength);
+                if (FAILED (hr))
+                    break;
+                continue;
+            }
+
             int samplesToWrite = (int) numFrames;
             int freeSpace = fifo.getFreeSpace();
             if (samplesToWrite > freeSpace)
-                samplesToWrite = freeSpace; // drop oldest implicitly by not writing excess
+                samplesToWrite = freeSpace; // drop excess when buffer is full
 
             if (samplesToWrite > 0 && ! (flags & AUDCLNT_BUFFERFLAGS_SILENT))
             {
@@ -540,4 +586,30 @@ bool WasapiLoopbackCapture::initAndCapture()
 
     // COM pointers released by RAII destructors when method returns
     return threadShouldExit(); // true = clean exit, false = error (will retry)
+}
+
+void WasapiLoopbackCapture::checkHealthAndRecover()
+{
+    // Only called from message thread (UI timer)
+    if (isThreadRunning())
+    {
+        recoveryBackoffMs = 500; // reset backoff while healthy
+        return;
+    }
+
+    // Thread is not running — if we're intentionally disconnected, do nothing
+    if (status.load (std::memory_order_acquire) == Status::Disconnected)
+        return;
+
+    // Exponential backoff on restart attempts
+    auto now = juce::Time::getHighResolutionTicks();
+    double sinceLastMs = juce::Time::highResolutionTicksToSeconds (now - lastRecoveryAttemptTicks) * 1000.0;
+    if (sinceLastMs < recoveryBackoffMs)
+        return;
+
+    lastRecoveryAttemptTicks = now;
+    fifo.reset();
+    status.store (Status::Connecting, std::memory_order_release);
+    startThread (juce::Thread::Priority::highest);
+    recoveryBackoffMs = std::min (recoveryBackoffMs * 2, kMaxRecoveryBackoffMs);
 }

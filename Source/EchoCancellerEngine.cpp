@@ -12,13 +12,14 @@
 #include <cstring>
 #include <cmath>
 
-// AEC3.lib is built in Release mode only — Debug builds will fail with CRT mismatches
-#if defined(_MSC_VER) && defined(_DEBUG)
-#error "AEC3.lib requires Release configuration. Switch to Release|x64 to build."
+// Link AEC3 static library (MSVC) — separate libs for Release/Debug CRT
+#if defined(_MSC_VER)
+  #if defined(_DEBUG)
+    #pragma comment(lib, "AEC3_debug.lib")
+  #else
+    #pragma comment(lib, "AEC3.lib")
+  #endif
 #endif
-
-// Link AEC3 static library (MSVC)
-#pragma comment(lib, "AEC3.lib")
 
 using namespace webrtc;
 
@@ -108,20 +109,29 @@ EchoCancellerEngine::AEC3Instance EchoCancellerEngine::createAEC3Instance (const
     EchoCanceller3Config config;
 
     // Map slider values to AEC3 thresholds, clamping to ensure
-    // enr_transparent ≤ enr_suppress (required by AEC3 suppressor)
+    // enr_transparent < enr_suppress (strict, AEC3 asserts this in debug)
+    auto ensureStrictLT = [] (float& transp, float& supp)
+    {
+        constexpr float kMinGap = 0.001f;
+        if (transp >= supp)
+            transp = supp - kMinGap;
+        if (transp < 0.0f)
+            transp = 0.0f;
+    };
+
     float lfTransp  = mapTransparency (p.lfTransparency);
     float lfSupp    = mapSuppression (p.lfSuppression);
     float hfTransp  = mapHfTransparency (p.hfTransparency);
     float hfSupp    = mapHfSuppression (p.hfSuppression);
-    lfTransp = std::min (lfTransp, lfSupp);
-    hfTransp = std::min (hfTransp, hfSupp);
+    ensureStrictLT (lfTransp, lfSupp);
+    ensureStrictLT (hfTransp, hfSupp);
 
     float dtLfTransp = mapTransparency (p.dtLfTransparency);
     float dtLfSupp   = mapSuppression (p.dtLfSuppression);
     float dtHfTransp = mapHfTransparency (p.dtHfTransparency);
     float dtHfSupp   = mapHfSuppression (p.dtHfSuppression);
-    dtLfTransp = std::min (dtLfTransp, dtLfSupp);
-    dtHfTransp = std::min (dtHfTransp, dtHfSupp);
+    ensureStrictLT (dtLfTransp, dtLfSupp);
+    ensureStrictLT (dtHfTransp, dtHfSupp);
 
     // Normal tuning
     config.suppressor.normal_tuning.mask_lf =
@@ -150,9 +160,9 @@ EchoCancellerEngine::AEC3Instance EchoCancellerEngine::createAEC3Instance (const
         mapHfEchoThreshold (p.hfEchoThreshold);
 
     // System params
-    config.filter.refined.length_blocks =
-        static_cast<size_t> (juce::jlimit (1.0f, 40.0f, p.roomReverb));
-    config.filter.coarse.length_blocks = config.filter.refined.length_blocks;
+    auto filterLen = static_cast<size_t> (juce::jlimit (13.0f, 40.0f, p.roomReverb));
+    config.filter.refined.length_blocks = filterLen;
+    config.filter.coarse.length_blocks  = filterLen;
     config.ep_strength.bounded_erl = p.boundedErl;
     config.echo_removal_control.has_clock_drift = p.clockDrift;
 
@@ -188,9 +198,28 @@ void EchoCancellerEngine::aec3WorkerLoop()
             p = aec3WorkerParams;
         }
 
-        auto inst = createAEC3Instance (p);
-        stagedInstance = std::move (inst);
-        aec3Ready.store (true, std::memory_order_release);
+        try
+        {
+            auto inst = createAEC3Instance (p);
+
+            // Wait until the audio thread has consumed the previous staged instance.
+            // Without this, we could overwrite stagedInstance while the audio thread reads it.
+            while (aec3Ready.load (std::memory_order_acquire))
+            {
+                if (aec3WorkerExit)
+                    return;
+                std::this_thread::sleep_for (std::chrono::microseconds (100));
+            }
+
+            stagedInstance = std::move (inst);
+            aec3Ready.store (true, std::memory_order_release);
+        }
+        catch (...)
+        {
+            // AEC3 creation failed — halt engine, user must factory reset to recover
+            aec3Error.store (true, std::memory_order_release);
+            return;
+        }
     }
 }
 
@@ -272,10 +301,11 @@ void EchoCancellerEngine::prepare (double sampleRate, int maxBlockSize)
     lastLoopbackRate = 0;
     loopbackResampler.reset();
 
-    // Reset debounce and transition state
+    // Reset debounce, transition, and gap detection state
     paramsDirty = false;
     debounceCountdown = 0;
     wasEnabled = true;
+    lastProcessTicks = 0;
 
     // Start background worker for AEC3 recreation
     startWorker();
@@ -299,29 +329,54 @@ void EchoCancellerEngine::process (const float* micIn, float* out, int numSample
     // Handle factory reset request from UI thread (safe: runs on audio thread)
     if (resetRequested.load (std::memory_order_acquire))
     {
+        aec3Error.store (false, std::memory_order_release); // clear error before re-init
         int savedRate = hostSampleRate;
         int savedBlock = hostBlockSize;
         release();
         prepare (savedRate > 0 ? (double) savedRate : 48000.0,
                  savedBlock > 0 ? savedBlock : 480);
         resetRequested.store (false, std::memory_order_release);
+        lastProcessTicks = 0; // reset gap detection after full re-init
+    }
+
+    // Gap detection — flush stale data if processBlock wasn't called for a while
+    {
+        auto now = juce::Time::getHighResolutionTicks();
+        if (lastProcessTicks != 0)
+        {
+            double gapMs = juce::Time::highResolutionTicksToSeconds (now - lastProcessTicks) * 1000.0;
+            if (gapMs > kGapThresholdMs)
+            {
+                // Drain all stale loopback data
+                while (loopback.readSamples (tempLoopbackRaw.data(), kMaxLoopbackRead) > 0) {}
+
+                nearEndFifo.reset();
+                farEndFifo.reset();
+                outputFifo.reset();
+            }
+        }
+        lastProcessTicks = now;
     }
 
     bool isEnabled = enabled.load (std::memory_order_acquire);
+    bool hasErr = aec3Error.load (std::memory_order_acquire);
 
-    if (! echoController || ! isEnabled)
+    if (! echoController || ! isEnabled || hasErr)
     {
-        // Drain loopback so the ring buffer doesn't overflow with stale data
-        loopback.readSamples (tempLoopbackRaw.data(), kMaxLoopbackRead);
+        // Pause capture so loopback doesn't accumulate stale data while idle
+        loopback.setCaptureActive (false);
 
         std::memcpy (out, micIn, sizeof (float) * static_cast<size_t> (numSamples));
         wasEnabled = false;
         return;
     }
 
-    // Detect disabled→enabled transition — reset FIFOs to discard stale data
+    // Detect disabled→enabled transition — drain loopback and restart capture fresh
     if (! wasEnabled)
     {
+        while (loopback.readSamples (tempLoopbackRaw.data(), kMaxLoopbackRead) > 0) {}
+        loopback.setCaptureActive (true);
+
         nearEndFifo.reset();
         farEndFifo.reset();
         outputFifo.reset();

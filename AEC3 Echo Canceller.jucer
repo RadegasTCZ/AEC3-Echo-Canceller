@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="dMynSa" name="AEC3 Echo Canceller" projectType="audioplug"
               useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
-              pluginVST3Category="External,Filter,Fx" version="4.0.0" companyName="RadOo - Personal project"
+              pluginVST3Category="External,Filter,Fx" version="4.1.0" companyName="RadOo - Personal project"
               companyCopyright="2026" companyWebsite="https://github.com/RadegasTCZ"
               companyEmail="radegast2321@gmail.com" pluginFormats="buildStandalone,buildVST,buildVST3"
               pluginManufacturerCode="RDTV" pluginCode="AE3C" pluginName="AEC3 Echo Canceller v4.0.0"

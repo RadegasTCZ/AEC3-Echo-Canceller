@@ -128,13 +128,13 @@ AEC3EchoCancellerAudioProcessorEditor::AEC3EchoCancellerAudioProcessorEditor (AE
         "Compensate for fixed delay between mic and reference (e.g. wireless mics)");
     latencyComp.slider.setNumDecimalPlacesToDisplay (0);
     setupSlider (roomReverb,  "Room Reverb", "roomReverb",  "",   55,
-        "Echo tail length — increase for reverberant rooms");
+        "Echo tail length - increase for reverberant rooms");
     roomReverb.slider.textFromValueFunction = [] (double v) { return "L" + juce::String ((int) v); };
     roomReverb.slider.setNumDecimalPlacesToDisplay (0);
 
     // System toggles
     addAndMakeVisible (boundedErlButton);
-    boundedErlButton.setTooltip ("Use conservative echo estimation — helps when echo is inconsistent");
+    boundedErlButton.setTooltip ("Use conservative echo estimation - helps when echo is inconsistent");
     boundedErlAttachment = std::make_unique<ButtonAttachment> (
         audioProcessor.getAPVTS(), "boundedErl", boundedErlButton);
 
@@ -276,7 +276,7 @@ void AEC3EchoCancellerAudioProcessorEditor::applyPreset (int presetId)
             set ("dtLfSuppression",  15.0f);  set ("dtLfTransparency", 20.0f);
             set ("dtHfSuppression",  25.0f);  set ("dtHfTransparency", 60.0f);
             set ("dtLfAttack",       20.0f);  set ("dtLfDecay",        15.0f);
-            set ("latencyComp",       0.0f);  set ("roomReverb",       10.0f);
+            set ("latencyComp",       0.0f);  set ("roomReverb",       13.0f);
             set ("boundedErl",        0.0f);  set ("clockDrift",        0.0f);
             break;
 
@@ -420,14 +420,42 @@ void AEC3EchoCancellerAudioProcessorEditor::timerCallback()
     peakOut = engine.peakOutDb.load (std::memory_order_relaxed);
     peakRef = engine.peakRefDb.load (std::memory_order_relaxed);
 
-    // Update status
-    auto status = audioProcessor.getLoopbackCapture().getStatus();
+    // Check capture thread health — attempt restart if it died
+    auto& loopback = audioProcessor.getLoopbackCapture();
+    loopback.checkHealthAndRecover();
 
-    switch (status)
+    // Update status
+    auto status = loopback.getStatus();
+    bool stalled = false;
+
+    if (status == WasapiLoopbackCapture::Status::Connected)
+    {
+        // Check heartbeat — detect if capture thread is stuck in a COM call
+        auto heartbeat = loopback.getLastHeartbeatTicks();
+        auto now = juce::Time::getHighResolutionTicks();
+        double staleSec = juce::Time::highResolutionTicksToSeconds (now - heartbeat);
+        if (heartbeat > 0 && staleSec > 2.0)
+            stalled = true;
+    }
+
+    // Check for AEC3 engine error (takes priority over capture status)
+    bool engineError = audioProcessor.getEchoCancellerEngine().hasError();
+
+    if (engineError)
+    {
+        statusLabel.setText ("AEC3 Error - Use Factory Reset", juce::dontSendNotification);
+        statusLabel.setColour (juce::Label::textColourId, juce::Colours::red);
+    }
+    else if (stalled)
+    {
+        statusLabel.setText ("Capture Stalled", juce::dontSendNotification);
+        statusLabel.setColour (juce::Label::textColourId, juce::Colours::orange);
+    }
+    else switch (status)
     {
         case WasapiLoopbackCapture::Status::Connected:
         {
-            int rate = audioProcessor.getLoopbackCapture().getCapturedSampleRate();
+            int rate = loopback.getCapturedSampleRate();
             statusLabel.setText ("Connected (" + juce::String (rate) + " Hz)",
                                 juce::dontSendNotification);
             statusLabel.setColour (juce::Label::textColourId, juce::Colours::limegreen);

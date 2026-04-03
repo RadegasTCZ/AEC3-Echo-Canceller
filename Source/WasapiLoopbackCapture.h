@@ -36,6 +36,19 @@ public:
     int getCapturedSampleRate() const { return capturedSampleRate.load (std::memory_order_acquire); }
     int getCapturedChannels() const { return capturedChannels.load (std::memory_order_acquire); }
 
+    // Pause/resume writing to the ring buffer (real-time safe, just an atomic store).
+    // When paused, the capture thread still drains WASAPI but discards data.
+    // On resume, the ring buffer is flushed by the capture thread before new writes.
+    void setCaptureActive (bool active) { captureActive.store (active, std::memory_order_release); }
+    bool isCaptureActive() const { return captureActive.load (std::memory_order_acquire); }
+
+    // Heartbeat — updated each capture loop iteration. Returns high-resolution ticks.
+    int64_t getLastHeartbeatTicks() const { return lastHeartbeatTicks.load (std::memory_order_acquire); }
+
+    // Check capture thread health and attempt restart if it died.
+    // Call from the message thread (e.g. UI timer), NOT the audio thread.
+    void checkHealthAndRecover();
+
     // Device selection — empty string means system default
     void setDeviceId (const juce::String& deviceId);
     juce::String getDeviceId() const;
@@ -59,6 +72,12 @@ private:
     std::atomic<int> capturedSampleRate { 0 };
     std::atomic<int> capturedChannels { 0 };
 
+    // Capture pause/resume — audio thread sets, capture thread reads
+    std::atomic<bool> captureActive { true };
+
+    // Heartbeat — capture thread writes, UI/audio thread reads
+    std::atomic<int64_t> lastHeartbeatTicks { 0 };
+
     // Device selection
     mutable juce::CriticalSection deviceIdLock;
     juce::String selectedDeviceId;           // protected by deviceIdLock
@@ -66,6 +85,11 @@ private:
 
     // Device change notification
     std::atomic<bool> deviceListChanged { false };
+
+    // Recovery state (message thread only — accessed from checkHealthAndRecover)
+    int64_t lastRecoveryAttemptTicks = 0;
+    int recoveryBackoffMs = 500;
+    static constexpr int kMaxRecoveryBackoffMs = 10000;
 
     // IMMNotificationClient prevent forward declaration issues - stored as void*
     void* notificationClient = nullptr;
