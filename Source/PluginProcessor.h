@@ -19,6 +19,13 @@ public:
    #endif
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    /** Bypass crossfade length in host samples. */
+    static constexpr int kBypassRampSamples = 480;
+
+    /** Tests set this to false so prepareToPlay does not start WASAPI capture. */
+    bool startCaptureOnPrepare = true;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
@@ -43,7 +50,13 @@ public:
     WasapiLoopbackCapture& getLoopbackCapture() { return loopbackCapture; }
     EchoCancellerEngine& getEchoCancellerEngine() { return echoCancellerEngine; }
 
+    // UI page persistence (main / advanced)
+    bool isAdvancedOpen() const                        { return uiMode == "advanced"; }
+    void setAdvancedOpen (bool open)                   { uiMode = open ? "advanced" : "basic"; }
+
 private:
+    void processInternal (juce::AudioBuffer<float>&, bool forceBypass);
+
     juce::AudioProcessorValueTreeState parameters;
     WasapiLoopbackCapture loopbackCapture;
     EchoCancellerEngine echoCancellerEngine;
@@ -76,11 +89,27 @@ private:
     std::atomic<float>* boundedErlParam = nullptr;
     std::atomic<float>* clockDriftParam = nullptr;
 
+    // Noise suppression
+    std::atomic<float>* nsLevelParam = nullptr;
+    std::atomic<float>* monitorNoiseParam = nullptr;
+
     // Device ID — stored outside APVTS (dynamic list doesn't fit APVTS well)
     juce::String selectedDeviceId;
 
+    // UI mode — persisted in state XML, restored by editor on open
+    juce::String uiMode { "basic" };
+
     std::vector<float> monoInputBuffer;
     std::vector<float> monoOutputBuffer;
+    std::vector<float> dryBuffer;
+    int preparedBlock = 0;
+
+    // Whole-plugin bypass (audio thread only)
+    aec::DelayLine dryDelay;
+    int bypassCount = 0;        // 0 = fully processed, kBypassRampSamples = fully dry
+    bool engineActive = true;   // engine.setEnabled state as last set by processInternal
+    bool wasFaulted = false;    // engine error / unusable state on the previous block
+    int holdRemaining = 0;      // host samples until the engine's output is real after (re)enabling
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AEC3EchoCancellerAudioProcessor)
 };

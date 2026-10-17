@@ -16,6 +16,17 @@ JuceLibraryCode/
 *.VC.opendb
 ipch/
 
+# VS Code per-developer state
+.vscode/
+
+# Editor backups / temps
+*.bak
+*.tmp
+*~
+
+# Local scratch / ad-hoc test files (test preset .ini, throwaway recordings, etc.)
+_scratch/
+
 # Archives
 *.7z
 *.zip
@@ -25,3 +36,12 @@ ipch/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Superpowers scratch (brainstorm mockups, SDD ledgers)
+.superpowers/
+
+# AEC3 library build output
+tools/aec3-build/build_*/
+
+# Internal design notes (kept locally, not published)
+docs/superpowers/

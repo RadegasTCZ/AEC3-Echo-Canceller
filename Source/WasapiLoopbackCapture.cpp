@@ -346,6 +346,29 @@ void WasapiLoopbackCapture::run()
     }
 }
 
+WasapiLoopbackCapture::SampleFormat WasapiLoopbackCapture::classifyMixFormat (const MixFormat& f)
+{
+    if (f.channels <= 0)
+        return SampleFormat::Unsupported;   // a broken driver: nothing to downmix (and a divide by zero)
+
+    if (f.formatTag == kFormatTagIeeeFloat)
+        return f.bitsPerSample == 32 ? SampleFormat::Float32 : SampleFormat::Unsupported;
+
+    if (f.formatTag == kFormatTagPcm)
+        return f.bitsPerSample == 16 ? SampleFormat::Int16 : SampleFormat::Unsupported;
+
+    if (f.formatTag == kFormatTagExtensible && f.extraSize >= 22)
+    {
+        if (f.subFormat == MixFormat::Sub::IeeeFloat)
+            return f.bitsPerSample == 32 ? SampleFormat::Float32 : SampleFormat::Unsupported;
+
+        if (f.subFormat == MixFormat::Sub::Pcm)
+            return f.bitsPerSample == 16 && f.validBitsPerSample == 16 ? SampleFormat::Int16 : SampleFormat::Unsupported;
+    }
+
+    return SampleFormat::Unsupported;
+}
+
 bool WasapiLoopbackCapture::initAndCapture()
 {
     // Get the selected or default audio render endpoint
@@ -390,18 +413,31 @@ bool WasapiLoopbackCapture::initAndCapture()
     int deviceSampleRate = (int) mixFormat->nSamplesPerSec;
     int deviceChannels = (int) mixFormat->nChannels;
 
-    // Determine if the format is IEEE float
-    bool isFloat = false;
-    if (mixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT)
-    {
-        isFloat = true;
-    }
-    else if (mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE && mixFormat->cbSize >= 22)
+    // Only 32-bit float and 16-bit PCM are converted; anything else (24/32-bit PCM, no channels) fails
+    // the init, so the run loop retries with backoff instead of capturing garbage.
+    MixFormat info;
+    info.formatTag = (int) mixFormat->wFormatTag;
+    info.channels = deviceChannels;
+    info.bitsPerSample = (int) mixFormat->wBitsPerSample;
+    info.extraSize = (int) mixFormat->cbSize;
+
+    if (mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE && mixFormat->cbSize >= 22)
     {
         auto* ext = reinterpret_cast<WAVEFORMATEXTENSIBLE*> (mixFormat);
-        if (ext->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)
-            isFloat = true;
+        info.validBitsPerSample = (int) ext->Samples.wValidBitsPerSample;
+        info.subFormat = ext->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT ? MixFormat::Sub::IeeeFloat
+                       : ext->SubFormat == KSDATAFORMAT_SUBTYPE_PCM        ? MixFormat::Sub::Pcm
+                                                                           : MixFormat::Sub::Other;
     }
+
+    const auto sampleFormat = classifyMixFormat (info);
+    if (sampleFormat == SampleFormat::Unsupported)
+    {
+        CoTaskMemFree (mixFormat);
+        return false;
+    }
+
+    const bool isFloat = sampleFormat == SampleFormat::Float32;
 
     capturedSampleRate.store (deviceSampleRate, std::memory_order_release);
     capturedChannels.store (deviceChannels, std::memory_order_release);
@@ -409,7 +445,10 @@ bool WasapiLoopbackCapture::initAndCapture()
     // Create event for event-driven capture (no polling, instant wake on exit)
     HANDLE captureEvent = CreateEventW (nullptr, FALSE, FALSE, nullptr);
     if (captureEvent == nullptr)
+    {
+        CoTaskMemFree (mixFormat);
         return false;
+    }
 
     // Initialize in shared mode with loopback + event-driven flags, 50ms buffer
     REFERENCE_TIME bufferDuration = 500000; // 50ms in 100ns units
@@ -533,7 +572,7 @@ bool WasapiLoopbackCapture::initAndCapture()
                             dest[i] = (int16_t) (mono * 32767.0f);
                         }
                     }
-                    else // 16-bit PCM fallback
+                    else // 16-bit PCM
                     {
                         auto* src = reinterpret_cast<const int16_t*> (data);
                         for (int i = 0; i < count; ++i)

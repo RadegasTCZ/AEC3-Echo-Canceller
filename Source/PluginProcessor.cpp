@@ -1,5 +1,13 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "ParamIds.h"
+#include "StateMigration.h"
+
+/** nsLevel choice index from its raw value; a non-finite value (NaN automation) is the default 12 dB. */
+static int nsLevelIndex (float raw)
+{
+    return std::isfinite (raw) ? juce::roundToInt (raw) : 2;
+}
 
 static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
@@ -23,13 +31,13 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "hfTransparency", 1 }, "HF Transparency", pctRange, 85.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { "lfAttack", 1 }, "LF Attack", pctRange, 30.0f));
+        juce::ParameterID { "lfAttack", 1 }, "LF Attack", pctRange, 35.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "lfDecay", 1 }, "LF Decay", pctRange, 25.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "hfDucking", 1 }, "HF Ducking", pctRange, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { "hfEchoThreshold", 1 }, "HF Echo Threshold", pctRange, 50.0f));
+        juce::ParameterID { "hfEchoThreshold", 1 }, "HF Echo Threshold", pctRange, 55.0f));
 
     // Double-talk suppression (0-100%, step 5)
     layout.add (std::make_unique<juce::AudioParameterFloat> (
@@ -41,7 +49,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "dtHfTransparency", 1 }, "DT HF Transparency", pctRange, 80.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { "dtLfAttack", 1 }, "DT LF Attack", pctRange, 30.0f));
+        juce::ParameterID { "dtLfAttack", 1 }, "DT LF Attack", pctRange, 35.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "dtLfDecay", 1 }, "DT LF Decay", pctRange, 25.0f));
 
@@ -56,6 +64,13 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         juce::ParameterID { "boundedErl", 1 }, "Conservative Echo Estimation", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "clockDrift", 1 }, "Clock Drift Compensation", false));
+
+    // Noise suppression (v6)
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { aec::ids::nsLevel, 1 }, "Noise Level",
+        juce::StringArray { "Off", "6 dB", "12 dB", "18 dB", "21 dB" }, 2));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { aec::ids::monitorNoise, 1 }, "Hear Removed", false));
 
     return layout;
 }
@@ -102,6 +117,10 @@ AEC3EchoCancellerAudioProcessor::AEC3EchoCancellerAudioProcessor()
     roomReverbParam  = parameters.getRawParameterValue ("roomReverb");
     boundedErlParam  = parameters.getRawParameterValue ("boundedErl");
     clockDriftParam  = parameters.getRawParameterValue ("clockDrift");
+
+    // Noise suppression
+    nsLevelParam      = parameters.getRawParameterValue (aec::ids::nsLevel);
+    monitorNoiseParam = parameters.getRawParameterValue (aec::ids::monitorNoise);
 }
 
 AEC3EchoCancellerAudioProcessor::~AEC3EchoCancellerAudioProcessor()
@@ -174,16 +193,31 @@ void AEC3EchoCancellerAudioProcessor::changeProgramName (int index, const juce::
 
 void AEC3EchoCancellerAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    echoCancellerEngine.prepare (sampleRate, samplesPerBlock);
+    echoCancellerEngine.setNoiseLevel (nsLevelIndex (nsLevelParam->load()));   // first suppressor at the saved level
+    echoCancellerEngine.prepare (sampleRate, samplesPerBlock, loopbackCapture.getCapturedSampleRate());
 
-    monoInputBuffer.resize (static_cast<size_t> (samplesPerBlock));
-    monoOutputBuffer.resize (static_cast<size_t> (samplesPerBlock));
+    preparedBlock = juce::jmax (1, samplesPerBlock);
+    monoInputBuffer.assign (static_cast<size_t> (preparedBlock), 0.0f);
+    monoOutputBuffer.assign (static_cast<size_t> (preparedBlock), 0.0f);
+    dryBuffer.assign (static_cast<size_t> (preparedBlock), 0.0f);
 
-    // Report latency: one AEC3 frame (480 samples at 48kHz) converted to host rate
-    int aecLatency = static_cast<int> (std::ceil (480.0 * sampleRate / 48000.0));
-    setLatencySamples (aecLatency);
+    // Firm latency (frame + band split + AEC3 + noise suppressor, padded to a constant)
+    const int latency = echoCancellerEngine.getLatencySamples();
+    setLatencySamples (latency);
 
-    loopbackCapture.startCapture();
+    // Dry path: the mono mic delayed by exactly the reported latency
+    dryDelay.prepare (latency);
+    dryDelay.setDelay (latency);
+
+    // Start on the dry path. A plugin that is enabled holds it until the engine's output is real
+    // again (one latency plus its fade-in), so the first output is never the engine's priming silence.
+    bypassCount = kBypassRampSamples;
+    engineActive = enableParam->load() >= 0.5f;
+    holdRemaining = engineActive ? echoCancellerEngine.getPrimingSamples() : 0;
+    echoCancellerEngine.setEnabled (engineActive);
+
+    if (startCaptureOnPrepare)
+        loopbackCapture.startCapture();
 }
 
 void AEC3EchoCancellerAudioProcessor::releaseResources()
@@ -213,24 +247,34 @@ bool AEC3EchoCancellerAudioProcessor::isBusesLayoutSupported (const BusesLayout&
 }
 #endif
 
-void AEC3EchoCancellerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void AEC3EchoCancellerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
-    juce::ignoreUnused (midiMessages);
+    processInternal (buffer, false);
+}
+
+void AEC3EchoCancellerAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    processInternal (buffer, true);   // same latency as the normal path
+}
+
+void AEC3EchoCancellerAudioProcessor::processInternal (juce::AudioBuffer<float>& buffer, bool forceBypass)
+{
     juce::ScopedNoDenormals noDenormals;
 
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-    auto numSamples = buffer.getNumSamples();
+    const int totalNumInputChannels  = getTotalNumInputChannels();
+    const int totalNumOutputChannels = getTotalNumOutputChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    if (numSamples <= 0 || preparedBlock <= 0)
+        return;
 
     // Clear unused output channels
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+    for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, numSamples);
 
-    // Update engine state from parameters
-    echoCancellerEngine.setEnabled (enableParam->load() >= 0.5f);
+    // Engine settings from parameters
     echoCancellerEngine.setMonitorFarEnd (monitorCaptureParam->load() >= 0.5f);
 
-    // Build params struct from APVTS atomics
     EchoCancellerEngine::Params p;
     p.lfSuppression   = lfSuppressionParam->load();
     p.lfTransparency  = lfTransparencyParam->load();
@@ -252,43 +296,106 @@ void AEC3EchoCancellerAudioProcessor::processBlock (juce::AudioBuffer<float>& bu
     p.boundedErl    = boundedErlParam->load() >= 0.5f;
     p.clockDrift    = clockDriftParam->load() >= 0.5f;
 
+    // Both setters replace non-finite values (NaN automation) by their defaults
     echoCancellerEngine.setLatencyCompMs (latencyCompParam->load());
     echoCancellerEngine.setParams (p);
 
-    // Downmix input channels to mono
-    if (totalNumInputChannels > 1)
+    echoCancellerEngine.setNoiseLevel (nsLevelIndex (nsLevelParam->load()));
+    echoCancellerEngine.setMonitorNoiseResidual (monitorNoiseParam->load() >= 0.5f);
+
+    // A halted or unusable engine passes the mic through undelayed: treat it as bypass, and on the
+    // fault edge snap to the (correctly delayed) dry signal since the wet path is already invalid.
+    const bool faulted = echoCancellerEngine.hasError() || ! echoCancellerEngine.isReady();
+    const bool bypass = forceBypass || enableParam->load() < 0.5f || faulted;
+    const int priming = echoCancellerEngine.getPrimingSamples();
+
+    if (faulted && ! wasFaulted)
+        bypassCount = kBypassRampSamples;
+    else if (! faulted && wasFaulted)
+        holdRemaining = priming;   // engine re-primes on recovery: hold dry until its output is real
+    wasFaulted = faulted;
+
+    // Blocks larger than announced are split into prepared-size chunks (no reallocation)
+    for (int offset = 0; offset < numSamples; offset += preparedBlock)
     {
-        const float gain = 1.0f / (float) totalNumInputChannels;
-        const float* ch0 = buffer.getReadPointer (0);
+        const int n = juce::jmin (preparedBlock, numSamples - offset);
+        float* mono = monoInputBuffer.data();
+        float* wet  = monoOutputBuffer.data();
+        float* dry  = dryBuffer.data();
 
-        for (int i = 0; i < numSamples; ++i)
-            monoInputBuffer[static_cast<size_t> (i)] = ch0[i] * gain;
-
-        for (int ch = 1; ch < totalNumInputChannels; ++ch)
+        // Downmix input channels to mono
+        if (totalNumInputChannels > 1)
         {
-            const float* src = buffer.getReadPointer (ch);
-            for (int i = 0; i < numSamples; ++i)
-                monoInputBuffer[static_cast<size_t> (i)] += src[i] * gain;
+            const float gain = 1.0f / (float) totalNumInputChannels;
+            const float* ch0 = buffer.getReadPointer (0) + offset;
+
+            for (int i = 0; i < n; ++i)
+                mono[i] = ch0[i] * gain;
+
+            for (int ch = 1; ch < totalNumInputChannels; ++ch)
+            {
+                const float* src = buffer.getReadPointer (ch) + offset;
+                for (int i = 0; i < n; ++i)
+                    mono[i] += src[i] * gain;
+            }
+        }
+        else if (totalNumInputChannels == 1)
+        {
+            std::memcpy (mono, buffer.getReadPointer (0) + offset, sizeof (float) * static_cast<size_t> (n));
+        }
+        else
+        {
+            std::fill (mono, mono + n, 0.0f);
         }
 
-        echoCancellerEngine.process (monoInputBuffer.data(), monoOutputBuffer.data(),
-                                    numSamples, loopbackCapture);
-    }
-    else if (totalNumInputChannels == 1)
-    {
-        echoCancellerEngine.process (buffer.getReadPointer (0), monoOutputBuffer.data(),
-                                    numSamples, loopbackCapture);
-    }
-    else
-    {
-        std::memset (monoOutputBuffer.data(), 0, sizeof (float) * static_cast<size_t> (numSamples));
-    }
+        // Dry path, always running so its delay line stays aligned
+        dryDelay.process (mono, dry, n);
 
-    // Copy mono output to all output channels
-    for (int ch = 0; ch < totalNumOutputChannels; ++ch)
-    {
-        float* dest = buffer.getWritePointer (ch);
-        std::memcpy (dest, monoOutputBuffer.data(), sizeof (float) * static_cast<size_t> (numSamples));
+        // Engine on/off follows the bypass ramp: off only once the output is pure dry; back on
+        // with the output held on dry until the engine's output is real again.
+        if (bypass && engineActive && bypassCount >= kBypassRampSamples)
+        {
+            engineActive = false;
+            holdRemaining = 0;
+            echoCancellerEngine.setEnabled (false);   // pauses capture
+        }
+        else if (! bypass && ! engineActive)
+        {
+            engineActive = true;
+            holdRemaining = priming;
+            echoCancellerEngine.setEnabled (true);
+        }
+
+        echoCancellerEngine.process (mono, wet, n, loopbackCapture);
+
+        // out = b * dry + (1 - b) * wet, exact dry when b == 1
+        bool dryAudible = false;
+
+        for (int i = 0; i < n; ++i)
+        {
+            const bool holding = holdRemaining > 0;
+            if (holding)
+                --holdRemaining;
+
+            if (bypass)
+                bypassCount = juce::jmin (kBypassRampSamples, bypassCount + 1);
+            else if (! holding)
+                bypassCount = juce::jmax (0, bypassCount - 1);
+
+            if (bypassCount > 0)
+                dryAudible = true;
+
+            const float b = (float) bypassCount / (float) kBypassRampSamples;
+            wet[i] = bypassCount >= kBypassRampSamples ? dry[i] : b * dry[i] + (1.0f - b) * wet[i];
+        }
+
+        // The engine only meters its own output; while the dry path is audible OUT shows what is heard
+        if (dryAudible)
+            echoCancellerEngine.outPeak.push (wet, n);
+
+        // Copy mono output to all output channels
+        for (int ch = 0; ch < totalNumOutputChannels; ++ch)
+            std::memcpy (buffer.getWritePointer (ch) + offset, wet, sizeof (float) * static_cast<size_t> (n));
     }
 }
 
@@ -310,6 +417,9 @@ void AEC3EchoCancellerAudioProcessor::getStateInformation (juce::MemoryBlock& de
     // Save device ID alongside APVTS state
     xml->setAttribute ("captureDeviceId", loopbackCapture.getDeviceId());
 
+    // Save UI mode (basic / advanced)
+    xml->setAttribute ("uiMode", uiMode);
+
     copyXmlToBinary (*xml, destData);
 }
 
@@ -324,6 +434,14 @@ void AEC3EchoCancellerAudioProcessor::setStateInformation (const void* data, int
         loopbackCapture.setDeviceId (selectedDeviceId);
 
         parameters.replaceState (juce::ValueTree::fromXml (*xml));
+        aec::applyMissingDefaults (parameters, *xml);
+
+        // Restore UI mode (basic / advanced) — fall back to "basic" if missing/invalid
+        auto stateMode = xml->getStringAttribute ("uiMode", "basic");
+        if (stateMode == "basic" || stateMode == "advanced")
+            uiMode = stateMode;
+        else
+            uiMode = "basic";
     }
 }
 

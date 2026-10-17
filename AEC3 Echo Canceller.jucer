@@ -2,10 +2,10 @@
 
 <JUCERPROJECT id="dMynSa" name="AEC3 Echo Canceller" projectType="audioplug"
               useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
-              pluginVST3Category="External,Filter,Fx" version="4.1.0" companyName="RadOo - Personal project"
+              pluginVST3Category="External,Filter,Fx" version="6.0.0" companyName="RadegasTCZ"
               companyCopyright="2026" companyWebsite="https://github.com/RadegasTCZ"
               companyEmail="radegast2321@gmail.com" pluginFormats="buildStandalone,buildVST,buildVST3"
-              pluginManufacturerCode="RDTV" pluginCode="AE3C" pluginName="AEC3 Echo Canceller v4.0.0"
+              pluginManufacturer="RadegasTCZ" pluginManufacturerCode="RDTV" pluginCode="AE3C" pluginName="AEC3 Echo Canceller"
               pluginDesc="AEC with WASAPI capture for real-time communication."
               cppLanguageStandard="20">
   <MAINGROUP id="Y9873e" name="AEC3 Echo Canceller">
@@ -25,30 +25,94 @@
             file="Source/EchoCancellerEngine.h"/>
       <FILE id="aec004" name="EchoCancellerEngine.cpp" compile="1" resource="0"
             file="Source/EchoCancellerEngine.cpp"/>
+      <FILE id="aec013" name="PresetIO.h" compile="0" resource="0"
+            file="Source/PresetIO.h"/>
+      <FILE id="aec014" name="PresetIO.cpp" compile="1" resource="0"
+            file="Source/PresetIO.cpp"/>
+      <FILE id="aec015" name="AecMapping.h" compile="0" resource="0"
+            file="Source/AecMapping.h"/>
+      <FILE id="aec016" name="AecMapping.cpp" compile="1" resource="0"
+            file="Source/AecMapping.cpp"/>
+      <FILE id="aec017" name="Strength.h" compile="0" resource="0"
+            file="Source/Strength.h"/>
+      <FILE id="aec018" name="Strength.cpp" compile="1" resource="0"
+            file="Source/Strength.cpp"/>
+      <FILE id="aec019" name="ParamIds.h" compile="0" resource="0" file="Source/ParamIds.h"/>
+      <FILE id="aec020" name="StateMigration.h" compile="0" resource="0"
+            file="Source/StateMigration.h"/>
+      <FILE id="aec021" name="StateMigration.cpp" compile="1" resource="0"
+            file="Source/StateMigration.cpp"/>
+      <FILE id="aec022" name="Resampler.h" compile="0" resource="0" file="Source/Resampler.h"/>
+      <FILE id="aec023" name="Resampler.cpp" compile="1" resource="0" file="Source/Resampler.cpp"/>
+      <FILE id="aec024" name="LoopbackSource.h" compile="0" resource="0" file="Source/LoopbackSource.h"/>
+      <FILE id="aec025" name="DelayLine.h" compile="0" resource="0" file="Source/DelayLine.h"/>
+      <FILE id="aec026" name="PeakHold.h" compile="0" resource="0" file="Source/PeakHold.h"/>
+    </GROUP>
+    <GROUP id="aecUi" name="UI">
+      <FILE id="aecUi01" name="Theme.h" compile="0" resource="0" file="Source/UI/Theme.h"/>
+      <FILE id="aecUi02" name="Theme.cpp" compile="1" resource="0" file="Source/UI/Theme.cpp"/>
+      <FILE id="aecUi03" name="SegmentedSelector.h" compile="0" resource="0" file="Source/UI/SegmentedSelector.h"/>
+      <FILE id="aecUi04" name="SegmentedSelector.cpp" compile="1" resource="0" file="Source/UI/SegmentedSelector.cpp"/>
+      <FILE id="aecUi05" name="MeterView.h" compile="0" resource="0" file="Source/UI/MeterView.h"/>
+      <FILE id="aecUi06" name="MeterView.cpp" compile="1" resource="0" file="Source/UI/MeterView.cpp"/>
+      <FILE id="aecUi07" name="HelpText.h" compile="0" resource="0" file="Source/UI/HelpText.h"/>
+      <FILE id="aecUi08" name="HelpText.cpp" compile="1" resource="0" file="Source/UI/HelpText.cpp"/>
+      <FILE id="aecUi09" name="MeterBallistics.h" compile="0" resource="0" file="Source/UI/MeterBallistics.h"/>
+      <FILE id="aecUi10" name="StrengthSelector.h" compile="0" resource="0" file="Source/UI/StrengthSelector.h"/>
+      <FILE id="aecUi10c" name="StrengthSelector.cpp" compile="1" resource="0" file="Source/UI/StrengthSelector.cpp"/>
+      <FILE id="aecUi11" name="Header.h" compile="0" resource="0" file="Source/UI/Header.h"/>
+      <FILE id="aecUi11c" name="Header.cpp" compile="1" resource="0" file="Source/UI/Header.cpp"/>
+      <FILE id="aecUi12" name="EchoBox.h" compile="0" resource="0" file="Source/UI/EchoBox.h"/>
+      <FILE id="aecUi12c" name="EchoBox.cpp" compile="1" resource="0" file="Source/UI/EchoBox.cpp"/>
+      <FILE id="aecUi13" name="NoiseBox.h" compile="0" resource="0" file="Source/UI/NoiseBox.h"/>
+      <FILE id="aecUi13c" name="NoiseBox.cpp" compile="1" resource="0" file="Source/UI/NoiseBox.cpp"/>
+      <FILE id="aecUiXComph" name="CompactSlider.h" compile="0" resource="0" file="Source/UI/CompactSlider.h"/>
+      <FILE id="aecUiXCompcpp" name="CompactSlider.cpp" compile="1" resource="0" file="Source/UI/CompactSlider.cpp"/>
+      <FILE id="aecUiXOtheh" name="OtherTab.h" compile="0" resource="0" file="Source/UI/OtherTab.h"/>
+      <FILE id="aecUiXOthecpp" name="OtherTab.cpp" compile="1" resource="0" file="Source/UI/OtherTab.cpp"/>
+      <FILE id="aecUiXAdvah" name="AdvancedPage.h" compile="0" resource="0" file="Source/UI/AdvancedPage.h"/>
+      <FILE id="aecUiXAdvacpp" name="AdvancedPage.cpp" compile="1" resource="0" file="Source/UI/AdvancedPage.cpp"/>
+    </GROUP>
+    <GROUP id="aecSpx" name="speexdsp">
+      <GROUP id="aecSpxH" name="speex">
+        <FILE id="aecSp01" name="speex_resampler.h" compile="0" resource="0"
+              file="thirdparty/speexdsp/speex/speex_resampler.h"/>
+        <FILE id="aecSp02" name="speexdsp_types.h" compile="0" resource="0"
+              file="thirdparty/speexdsp/speex/speexdsp_types.h"/>
+      </GROUP>
+      <FILE id="aecSp03" name="resample.c" compile="1" resource="0" file="thirdparty/speexdsp/resample.c"/>
+      <FILE id="aecSp04" name="arch.h" compile="0" resource="0" file="thirdparty/speexdsp/arch.h"/>
+      <FILE id="aecSp05" name="os_support.h" compile="0" resource="0" file="thirdparty/speexdsp/os_support.h"/>
+      <FILE id="aecSp06" name="resample_sse.h" compile="0" resource="0"
+            file="thirdparty/speexdsp/resample_sse.h"/>
+      <FILE id="aecSp07" name="resample_neon.h" compile="0" resource="0"
+            file="thirdparty/speexdsp/resample_neon.h"/>
+      <FILE id="aecSp08" name="speex_config_win.h" compile="0" resource="0"
+            file="thirdparty/speexdsp/speex_config_win.h"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>
-    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
     <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"
-            useGlobalPath="1"/>
-    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+            useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
     <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0"
-            useGlobalPath="1"/>
-    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
-    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+            useGlobalPath="0"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
     <VS2026 targetFolder="Builds/VisualStudio2026" extraDefs="WEBRTC_WIN&#10;NOMINMAX&#10;WIN32_LEAN_AND_MEAN&#10;RTC_DISABLE_METRICS&#10;WEBRTC_APM_DEBUG_DUMP=0"
-            cppLanguageStandard="20" extraCompilerFlags="/I&quot;..\..\thirdparty\AEC3&quot;">
+            cppLanguageStandard="20" extraCompilerFlags="/I&quot;..\..\thirdparty\AEC3&quot; /I&quot;..\..\thirdparty\speexdsp&quot;">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="AEC3 Echo Canceller" libraryPath="..\..\thirdparty\AEC3\lib"
                        externalLibraries="AEC3.lib"/>
@@ -56,20 +120,20 @@
                        externalLibraries="AEC3.lib"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
-        <MODULEPATH id="juce_audio_basics" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_audio_devices" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_audio_formats" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_audio_plugin_client" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_audio_processors" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_audio_processors_headless" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_audio_utils" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_core" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_data_structures" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_events" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_graphics" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_gui_basics" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_gui_extra" path="C:/JUCE8/modules"/>
-        <MODULEPATH id="juce_dsp" path="C:/JUCE8/modules"/>
+        <MODULEPATH id="juce_audio_basics" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_core" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_data_structures" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_events" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_graphics" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_dsp" path="C:/JUCE9/modules"/>
       </MODULEPATHS>
     </VS2026>
   </EXPORTFORMATS>

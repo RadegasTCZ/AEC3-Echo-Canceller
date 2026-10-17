@@ -2,93 +2,50 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "UI/Theme.h"
+#include "UI/Header.h"
+#include "UI/EchoBox.h"
+#include "UI/NoiseBox.h"
+#include "UI/AdvancedPage.h"
 
+/** Fixed 440 x 236 window (no resizing; setSize is called once, in the constructor). A 30 Hz timer ticks
+    the meters, the strength pills, the connection dot and the device list, repainting only what changed.
+    Shows the header plus the Echo and Noise boxes, or (Advanced open) the Advanced page. */
 class AEC3EchoCancellerAudioProcessorEditor  : public juce::AudioProcessorEditor,
                                                 private juce::Timer
 {
 public:
-    AEC3EchoCancellerAudioProcessorEditor (AEC3EchoCancellerAudioProcessor&);
+    static constexpr int kWidth = 440, kHeight = 236;
+
+    explicit AEC3EchoCancellerAudioProcessorEditor (AEC3EchoCancellerAudioProcessor&);
     ~AEC3EchoCancellerAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    aec::ui::Header& getHeader() noexcept        { return header; }
+    aec::ui::EchoBox& getEchoBox() noexcept      { return echoBox; }
+    aec::ui::NoiseBox& getNoiseBox() noexcept    { return noiseBox; }
+    aec::ui::AdvancedPage& getAdvancedPage() noexcept { return advancedPage; }
+    bool isAdvancedShown() const noexcept        { return advancedShown; }
+    /** Re-reads the loopback / engine state into the dot, its tooltip and the Other-tab status (timer, 30 Hz). */
+    void updateConnection();
+
 private:
     void timerCallback() override;
-    void drawSpectrum (juce::Graphics& g, juce::Rectangle<int> area);
-    void drawPeakMeter (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& label, float db);
-
-    // Helper to create a labelled slider row
-    struct SliderRow
-    {
-        juce::Label label;
-        juce::Slider slider;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-    };
-
-    void setupSlider (SliderRow& row, const juce::String& name, const juce::String& paramId,
-                      const juce::String& suffix = "", int textBoxWidth = 55,
-                      const juce::String& tooltip = "");
+    void showAdvanced (bool open);
 
     AEC3EchoCancellerAudioProcessor& audioProcessor;
+    aec::ui::Theme theme;                         // declared before every child: destroyed after them
 
-    // Core toggles
-    juce::ToggleButton enableButton { "AEC Enabled" };
-    juce::ToggleButton monitorCaptureButton { "Monitor Capture" };
+    aec::ui::Header header;
+    aec::ui::EchoBox echoBox;
+    aec::ui::NoiseBox noiseBox;
+    aec::ui::AdvancedPage advancedPage;
+    juce::TooltipWindow tooltipWindow { this, 700 };
 
-    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    std::unique_ptr<ButtonAttachment> enableAttachment;
-    std::unique_ptr<ButtonAttachment> monitorCaptureAttachment;
-
-    // Normal suppression sliders
-    SliderRow lfSuppression, lfTransparency, hfSuppression, hfTransparency;
-    SliderRow lfAttack, lfDecay, hfDucking, hfEchoThreshold;
-
-    // Double-talk sliders
-    SliderRow dtLfSuppression, dtLfTransparency, dtHfSuppression, dtHfTransparency;
-    SliderRow dtLfAttack, dtLfDecay;
-
-    // System sliders
-    SliderRow latencyComp, roomReverb;
-
-    // System toggles
-    juce::ToggleButton boundedErlButton { "Conservative Echo Est." };
-    juce::ToggleButton clockDriftButton { "Clock Drift Comp." };
-    std::unique_ptr<ButtonAttachment> boundedErlAttachment;
-    std::unique_ptr<ButtonAttachment> clockDriftAttachment;
-
-    // Device selection
-    juce::Label deviceLabel;
-    juce::ComboBox deviceCombo;
-    std::vector<WasapiLoopbackCapture::DeviceInfo> cachedDevices;
-    void refreshDeviceList();
-
-    // Presets
-    juce::ComboBox presetCombo;
-    int presetFlashCountdown = 0; // timer ticks until combo reverts to "Presets"
-    void applyPreset (int presetId);
-    void applyFactoryReset();
-
-    // Status + version
-    juce::Label statusLabel;
-    juce::Label versionLabel;
-
-    // Pre-rendered peak meter gradient
-    static constexpr float kMeterGamma = 2.0f; // >1 expands hot zone, compresses quiet end
-    juce::Image meterGradientImage;
-    void buildMeterGradient();
-
-    // Metering bounds for targeted repaint
-    juce::Rectangle<int> getMeteringBounds() const;
-
-    // Spectrum display cache
-    static constexpr int kSpectrumBands = 16;
-    float spectrumBands[kSpectrumBands] = {};
-
-    // Peak meter cache (dBFS)
-    float peakIn  = -100.0f;
-    float peakOut = -100.0f;
-    float peakRef = -100.0f;
+    bool advancedShown = false;
+    double lastTickSeconds = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AEC3EchoCancellerAudioProcessorEditor)
 };

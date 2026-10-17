@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="t01prj" name="AEC3Tests" projectType="consoleapp"
+              useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
+              cppLanguageStandard="20" version="6.0.0" companyName="RadegasTCZ">
+  <MAINGROUP id="t01mgr" name="AEC3Tests">
+    <GROUP id="t01g01" name="Tests">
+      <FILE id="t01a01" name="TestMain.cpp" compile="1" resource="0" file="TestMain.cpp"/>
+      <FILE id="t01a02" name="TestSignals.h" compile="0" resource="0" file="TestSignals.h"/>
+      <FILE id="t01a03" name="SanityTests.cpp" compile="1" resource="0" file="SanityTests.cpp"/>
+      <FILE id="t01a04" name="WebRtcLibraryTests.cpp" compile="1" resource="0" file="WebRtcLibraryTests.cpp"/>
+      <FILE id="t01a05" name="StrengthTests.cpp" compile="1" resource="0" file="StrengthTests.cpp"/>
+      <FILE id="t01a06" name="StateTests.cpp" compile="1" resource="0" file="StateTests.cpp"/>
+      <FILE id="t01a07" name="PresetTests.cpp" compile="1" resource="0" file="PresetTests.cpp"/>
+      <FILE id="t01a08" name="ResamplerTests.cpp" compile="1" resource="0" file="ResamplerTests.cpp"/>
+      <FILE id="t01a09" name="EngineTests.cpp" compile="1" resource="0" file="EngineTests.cpp"/>
+      <FILE id="t01a14" name="UiKitTests.cpp" compile="1" resource="0" file="UiKitTests.cpp"/>
+      <FILE id="t01a15" name="UiEditorTests.cpp" compile="1" resource="0" file="UiEditorTests.cpp"/>
+      <FILE id="t01a13" name="ProcessorTests.cpp" compile="1" resource="0" file="ProcessorTests.cpp"/>
+      <FILE id="t01a10" name="FakeLoopback.h" compile="0" resource="0" file="FakeLoopback.h"/>
+      <FILE id="t01a11" name="AllocCounter.h" compile="0" resource="0" file="AllocCounter.h"/>
+      <FILE id="t01a12" name="AllocCounter.cpp" compile="1" resource="0" file="AllocCounter.cpp"/>
+    </GROUP>
+    <GROUP id="t01g02" name="Source">
+      <FILE id="t01s00c" name="PluginProcessor.cpp" compile="1" resource="0" file="../Source/PluginProcessor.cpp"/>
+      <FILE id="t01s00h" name="PluginProcessor.h" compile="0" resource="0" file="../Source/PluginProcessor.h"/>
+      <FILE id="t01s01c" name="PluginEditor.cpp" compile="1" resource="0" file="../Source/PluginEditor.cpp"/>
+      <FILE id="t01s01h" name="PluginEditor.h" compile="0" resource="0" file="../Source/PluginEditor.h"/>
+      <FILE id="t01s02c" name="WasapiLoopbackCapture.cpp" compile="1" resource="0" file="../Source/WasapiLoopbackCapture.cpp"/>
+      <FILE id="t01s02h" name="WasapiLoopbackCapture.h" compile="0" resource="0" file="../Source/WasapiLoopbackCapture.h"/>
+      <FILE id="t01s03c" name="EchoCancellerEngine.cpp" compile="1" resource="0" file="../Source/EchoCancellerEngine.cpp"/>
+      <FILE id="t01s03h" name="EchoCancellerEngine.h" compile="0" resource="0" file="../Source/EchoCancellerEngine.h"/>
+      <FILE id="t01s08c" name="PresetIO.cpp" compile="1" resource="0" file="../Source/PresetIO.cpp"/>
+      <FILE id="t01s08h" name="PresetIO.h" compile="0" resource="0" file="../Source/PresetIO.h"/>
+      <FILE id="t01s09c" name="AecMapping.cpp" compile="1" resource="0" file="../Source/AecMapping.cpp"/>
+      <FILE id="t01s09h" name="AecMapping.h" compile="0" resource="0" file="../Source/AecMapping.h"/>
+      <FILE id="t01s10c" name="Strength.cpp" compile="1" resource="0" file="../Source/Strength.cpp"/>
+      <FILE id="t01s10h" name="Strength.h" compile="0" resource="0" file="../Source/Strength.h"/>
+      <FILE id="t01s11h" name="ParamIds.h" compile="0" resource="0" file="../Source/ParamIds.h"/>
+      <FILE id="t01s12c" name="StateMigration.cpp" compile="1" resource="0" file="../Source/StateMigration.cpp"/>
+      <FILE id="t01s12h" name="StateMigration.h" compile="0" resource="0" file="../Source/StateMigration.h"/>
+      <FILE id="t01s13c" name="Resampler.cpp" compile="1" resource="0" file="../Source/Resampler.cpp"/>
+      <FILE id="t01s13h" name="Resampler.h" compile="0" resource="0" file="../Source/Resampler.h"/>
+      <FILE id="t01s14h" name="LoopbackSource.h" compile="0" resource="0" file="../Source/LoopbackSource.h"/>
+      <FILE id="t01s15h" name="DelayLine.h" compile="0" resource="0" file="../Source/DelayLine.h"/>
+      <FILE id="t01s16h" name="PeakHold.h" compile="0" resource="0" file="../Source/PeakHold.h"/>
+    </GROUP>
+    <GROUP id="t01gUi" name="UI">
+      <FILE id="t01u01" name="Theme.h" compile="0" resource="0" file="../Source/UI/Theme.h"/>
+      <FILE id="t01u02" name="Theme.cpp" compile="1" resource="0" file="../Source/UI/Theme.cpp"/>
+      <FILE id="t01u03" name="SegmentedSelector.h" compile="0" resource="0" file="../Source/UI/SegmentedSelector.h"/>
+      <FILE id="t01u04" name="SegmentedSelector.cpp" compile="1" resource="0" file="../Source/UI/SegmentedSelector.cpp"/>
+      <FILE id="t01u05" name="MeterView.h" compile="0" resource="0" file="../Source/UI/MeterView.h"/>
+      <FILE id="t01u06" name="MeterView.cpp" compile="1" resource="0" file="../Source/UI/MeterView.cpp"/>
+      <FILE id="t01u07" name="HelpText.h" compile="0" resource="0" file="../Source/UI/HelpText.h"/>
+      <FILE id="t01u08" name="HelpText.cpp" compile="1" resource="0" file="../Source/UI/HelpText.cpp"/>
+      <FILE id="t01u09" name="MeterBallistics.h" compile="0" resource="0" file="../Source/UI/MeterBallistics.h"/>
+      <FILE id="t01u10" name="StrengthSelector.h" compile="0" resource="0" file="../Source/UI/StrengthSelector.h"/>
+      <FILE id="t01u10c" name="StrengthSelector.cpp" compile="1" resource="0" file="../Source/UI/StrengthSelector.cpp"/>
+      <FILE id="t01u11" name="Header.h" compile="0" resource="0" file="../Source/UI/Header.h"/>
+      <FILE id="t01u11c" name="Header.cpp" compile="1" resource="0" file="../Source/UI/Header.cpp"/>
+      <FILE id="t01u12" name="EchoBox.h" compile="0" resource="0" file="../Source/UI/EchoBox.h"/>
+      <FILE id="t01u12c" name="EchoBox.cpp" compile="1" resource="0" file="../Source/UI/EchoBox.cpp"/>
+      <FILE id="t01u13" name="NoiseBox.h" compile="0" resource="0" file="../Source/UI/NoiseBox.h"/>
+      <FILE id="t01u13c" name="NoiseBox.cpp" compile="1" resource="0" file="../Source/UI/NoiseBox.cpp"/>
+      <FILE id="t01uXComph" name="CompactSlider.h" compile="0" resource="0" file="../Source/UI/CompactSlider.h"/>
+      <FILE id="t01uXCompcpp" name="CompactSlider.cpp" compile="1" resource="0" file="../Source/UI/CompactSlider.cpp"/>
+      <FILE id="t01uXOtheh" name="OtherTab.h" compile="0" resource="0" file="../Source/UI/OtherTab.h"/>
+      <FILE id="t01uXOthecpp" name="OtherTab.cpp" compile="1" resource="0" file="../Source/UI/OtherTab.cpp"/>
+      <FILE id="t01uXAdvah" name="AdvancedPage.h" compile="0" resource="0" file="../Source/UI/AdvancedPage.h"/>
+      <FILE id="t01uXAdvacpp" name="AdvancedPage.cpp" compile="1" resource="0" file="../Source/UI/AdvancedPage.cpp"/>
+    </GROUP>
+    <GROUP id="t01g03" name="speexdsp">
+      <GROUP id="t01g04" name="speex">
+        <FILE id="t01x01" name="speex_resampler.h" compile="0" resource="0"
+              file="../thirdparty/speexdsp/speex/speex_resampler.h"/>
+        <FILE id="t01x02" name="speexdsp_types.h" compile="0" resource="0"
+              file="../thirdparty/speexdsp/speex/speexdsp_types.h"/>
+      </GROUP>
+      <FILE id="t01x03" name="resample.c" compile="1" resource="0" file="../thirdparty/speexdsp/resample.c"/>
+      <FILE id="t01x04" name="arch.h" compile="0" resource="0" file="../thirdparty/speexdsp/arch.h"/>
+      <FILE id="t01x05" name="os_support.h" compile="0" resource="0" file="../thirdparty/speexdsp/os_support.h"/>
+      <FILE id="t01x06" name="resample_sse.h" compile="0" resource="0"
+            file="../thirdparty/speexdsp/resample_sse.h"/>
+      <FILE id="t01x07" name="resample_neon.h" compile="0" resource="0"
+            file="../thirdparty/speexdsp/resample_neon.h"/>
+      <FILE id="t01x08" name="speex_config_win.h" compile="0" resource="0"
+            file="../thirdparty/speexdsp/speex_config_win.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"/>
+  <EXPORTFORMATS>
+    <VS2026 targetFolder="Builds/VisualStudio2026"
+            extraDefs="WEBRTC_WIN&#10;NOMINMAX&#10;WIN32_LEAN_AND_MEAN&#10;RTC_DISABLE_METRICS&#10;WEBRTC_APM_DEBUG_DUMP=0"
+            cppLanguageStandard="20"
+            extraCompilerFlags="/I&quot;..\..\..\thirdparty\AEC3&quot; /I&quot;..\..\..\thirdparty\speexdsp&quot; /I&quot;..\..\..&quot; /FI&quot;JuceLibraryCode\JucePluginDefines.h&quot; /utf-8">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="AEC3Tests" libraryPath="..\..\..\thirdparty\AEC3\lib"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="AEC3Tests" libraryPath="..\..\..\thirdparty\AEC3\lib"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_core" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_data_structures" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_dsp" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_events" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_graphics" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="C:/JUCE9/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="C:/JUCE9/modules"/>
+      </MODULEPATHS>
+    </VS2026>
+  </EXPORTFORMATS>
+</JUCERPROJECT>
