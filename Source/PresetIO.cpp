@@ -13,7 +13,9 @@ const juce::StringArray kPresetParamIds {
     "dtLfSuppression", "dtLfTransparency", "dtHfSuppression", "dtHfTransparency",
     "dtLfAttack", "dtLfDecay",
     // System
-    "latencyComp", "roomReverb", "boundedErl", "clockDrift", "nsLevel"
+    "latencyComp", "roomReverb", "boundedErl", "clockDrift", "nsLevel",
+    // Level
+    "agcEnabled", "agcHeadroom", "agcMaxGain", "agcAdaptSpeed", "agcNoiseCeiling", "limiterEnabled"
 };
 
 namespace
@@ -22,7 +24,7 @@ namespace
 
     bool isBoolParam (const juce::String& id)
     {
-        return id == "boundedErl" || id == "clockDrift";
+        return id == "boundedErl" || id == "clockDrift" || id == "agcEnabled" || id == "limiterEnabled";
     }
 
     bool isChoiceParam (const juce::String& id)
@@ -130,6 +132,12 @@ bool savePreset (const juce::File& file,
 
     content << "[System]" << juce::newLine;
     for (auto* id : { "latencyComp", "roomReverb", "boundedErl", "clockDrift", "nsLevel" })
+        writeKv (id);
+    content << juce::newLine;
+
+    content << "[Level]" << juce::newLine;
+    for (auto* id : { "agcEnabled", "agcHeadroom", "agcMaxGain", "agcAdaptSpeed", "agcNoiseCeiling",
+                      "limiterEnabled" })
         writeKv (id);
 
     if (! file.replaceWithText (content, false, false, "\n"))

@@ -120,6 +120,42 @@ const std::map<juce::String, HelpEntry> kHelpEntries =
             "",
             {}
         }},
+        { "agcEnabled", {
+            "Auto Gain",
+            "Auto gain: raises or lowers your voice toward a steady level, so you stay even when you lean back or speak softly. Gentle, Normal and Strong set how hard it works; it runs after echo and noise removal and never touches the Hear modes.",
+            "Try Gentle first. Move to Strong if your level still swings a lot. Switch it off if you already use a gain stage or compressor after this plugin.",
+            { "limiterEnabled" }
+        }},
+        { "agcHeadroom", {
+            "Headroom",
+            "Headroom: how far below full scale the auto gain aims to keep your voice peaks. This is the closest thing to a target level: lower headroom means a louder voice, higher means quieter and safer.",
+            "Raise it if you hear distortion on loud passages; lower it if your voice is still too quiet.",
+            { "agcMaxGain" }
+        }},
+        { "agcMaxGain", {
+            "Max Gain",
+            "Max gain: the most the auto gain may boost your voice. A low limit keeps a very quiet mic from being turned into hiss; a high limit lets it rescue a distant or soft voice.",
+            "Keep it as low as works. If background noise swells between words, lower it or the noise ceiling.",
+            { "agcNoiseCeiling" }
+        }},
+        { "agcAdaptSpeed", {
+            "Adapt Speed",
+            "Adapt speed: how fast the gain follows your level, in dB per second. Fast keeps you even sooner but can make the level pump audibly; slow sounds natural but reacts late.",
+            "Lower it if you hear the level pumping or breathing. Raise it if it takes too long to catch up when you move.",
+            {}
+        }},
+        { "agcNoiseCeiling", {
+            "Noise Ceiling",
+            "Noise ceiling: sounds quieter than this level are treated as noise and the auto gain does not boost them. Raise it (toward -20) if room noise gets pumped up between words.",
+            "Lower it (toward -80) only if your voice is so soft that the gain never opens.",
+            { "agcMaxGain" }
+        }},
+        { "limiterEnabled", {
+            "Limiter",
+            "Output limiter: catches peaks just before they clip, holding the output at -1 dBFS. The LIM bar shows how many dB it is pulling down.",
+            "Leave it on. With Auto gain on and the limiter off, a sudden loud sound can clip.",
+            { "agcEnabled" }
+        }},
         { "monitorNoise", {
             "Hear Removed",
             "Hear Removed: plays only what the noise stage takes away, so you can check it is removing noise and not your voice.",

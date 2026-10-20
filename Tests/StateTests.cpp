@@ -72,7 +72,8 @@ namespace
         "hfTransparency", "lfAttack", "lfDecay", "hfDucking", "hfEchoThreshold",
         "dtLfSuppression", "dtLfTransparency", "dtHfSuppression", "dtHfTransparency",
         "dtLfAttack", "dtLfDecay", "latencyComp", "roomReverb", "boundedErl", "clockDrift",
-        "nsLevel", "monitorNoise" };
+        "nsLevel", "monitorNoise",
+        "agcEnabled", "agcHeadroom", "agcMaxGain", "agcAdaptSpeed", "agcNoiseCeiling", "limiterEnabled" };
 }
 
 class StateTests final : public juce::UnitTest
@@ -85,13 +86,19 @@ public:
         beginTest ("parameter id constants match the registered parameters");
         {
             AEC3EchoCancellerAudioProcessor p;
-            expectEquals ((int) p.getParameters().size(), 22);
+            expectEquals ((int) p.getParameters().size(), 28);
 
             for (auto* id : allIds)
                 expect (p.getAPVTS().getParameter (id) != nullptr, juce::String (id));
 
             expectEquals (juce::String (aec::ids::nsLevel), juce::String ("nsLevel"));
             expectEquals (juce::String (aec::ids::monitorNoise), juce::String ("monitorNoise"));
+            expectEquals (juce::String (aec::ids::agcEnabled), juce::String ("agcEnabled"));
+            expectEquals (juce::String (aec::ids::agcHeadroom), juce::String ("agcHeadroom"));
+            expectEquals (juce::String (aec::ids::agcMaxGain), juce::String ("agcMaxGain"));
+            expectEquals (juce::String (aec::ids::agcAdaptSpeed), juce::String ("agcAdaptSpeed"));
+            expectEquals (juce::String (aec::ids::agcNoiseCeiling), juce::String ("agcNoiseCeiling"));
+            expectEquals (juce::String (aec::ids::limiterEnabled), juce::String ("limiterEnabled"));
         }
 
         beginTest ("Normal defaults");
@@ -122,6 +129,34 @@ public:
             expectEquals (raw (p, "nsLevel"), 0.0f);
             load (p, binaryFromXml (chunkXml ("X", "")));
             expectEquals (raw (p, "nsLevel"), 2.0f);
+        }
+
+        beginTest ("v6.0.0 chunk: AGC off, limiter on, AGC values Normal");
+        {
+            AEC3EchoCancellerAudioProcessor p;
+            setRaw (p, "agcEnabled", 1.0f);
+            setRaw (p, "limiterEnabled", 0.0f);
+            setRaw (p, "agcHeadroom", 0.0f);
+            setRaw (p, "agcMaxGain", 50.0f);
+            setRaw (p, "agcAdaptSpeed", 30.0f);
+            setRaw (p, "agcNoiseCeiling", -20.0f);
+            load (p, binaryFromXml (chunkXml ("X", "")));
+            expectEquals (raw (p, "agcEnabled"), 0.0f);
+            expectEquals (raw (p, "limiterEnabled"), 1.0f);
+            expectEquals (raw (p, "agcHeadroom"), 5.0f);
+            expectEquals (raw (p, "agcMaxGain"), 30.0f);
+            expectEquals (raw (p, "agcAdaptSpeed"), 6.0f);
+            expectEquals (raw (p, "agcNoiseCeiling"), -50.0f);
+        }
+
+        beginTest ("NaN agcHeadroom in host state takes its default");
+        {
+            AEC3EchoCancellerAudioProcessor p;
+            setRaw (p, "agcHeadroom", 12.0f);
+            auto xmlText = chunkXml ("X", "");
+            xmlText = xmlText.replace ("</AEC3>", "<PARAM id=\"agcHeadroom\" value=\"nan\"/></AEC3>");
+            load (p, binaryFromXml (xmlText));
+            expectEquals (raw (p, "agcHeadroom"), 5.0f);
         }
 
         beginTest ("missing monitorNoise becomes false");

@@ -108,6 +108,19 @@ void EchoCancellerEngine::setNoiseLevel (int choiceIndex)
     }
 }
 
+void EchoCancellerEngine::setAgc (const aec::AgcSettings& settings)
+{
+    // Sanitised first, so a NaN (never equal to itself) cannot re-arm the debounce every block
+    const aec::AgcSettings s = settings.sanitised();
+
+    if (! (s == pendingAgc))
+    {
+        pendingAgc = s;
+        agcDirty = true;
+        agcDebounceCountdown = kDebounceBlocks;
+    }
+}
+
 EchoCancellerEngine::AEC3Instance EchoCancellerEngine::createAEC3Instance (const Params& p)
 {
     EchoCanceller3Config config;
@@ -195,6 +208,13 @@ std::unique_ptr<NoiseSuppressor> EchoCancellerEngine::createNoiseSuppressor (int
     return std::make_unique<NoiseSuppressor> (config, (size_t) kAecRate, (size_t) 1);
 }
 
+std::unique_ptr<aec::AgcStage> EchoCancellerEngine::createAgcStage (const aec::AgcSettings& s, float initialGainDb)
+{
+    if (! s.enabled)
+        return nullptr;   // Off
+    return std::make_unique<aec::AgcStage> (s, initialGainDb);
+}
+
 std::unique_ptr<aec::Resampler> EchoCancellerEngine::createLoopbackResampler (int rate)
 {
     auto r = std::make_unique<aec::Resampler>();
@@ -237,6 +257,16 @@ void EchoCancellerEngine::postNsJob (int level)
     workerCv.notify_one();
 }
 
+void EchoCancellerEngine::postAgcJob (const aec::AgcSettings& s)
+{
+    {
+        std::lock_guard<std::mutex> lock (workerMutex);
+        agcJobSettings = s;
+        agcJobPending = true;
+    }
+    workerCv.notify_one();
+}
+
 bool EchoCancellerEngine::waitUntilConsumed (const std::atomic<bool>& ready)
 {
     // A running audio thread consumes a staged object within one block; a disabled or halted one may
@@ -261,12 +291,13 @@ void EchoCancellerEngine::workerLoop()
 {
     while (true)
     {
-        bool doAec = false, doNs = false, doLoopback = false;
+        bool doAec = false, doNs = false, doAgc = false, doLoopback = false;
         Params p;
+        aec::AgcSettings agc;
         int level = 0, rate = 0;
         {
             std::unique_lock<std::mutex> lock (workerMutex);
-            workerCv.wait (lock, [this] { return aecJobPending || nsJobPending || loopbackJobPending || workerExit.load(); });
+            workerCv.wait (lock, [this] { return aecJobPending || nsJobPending || agcJobPending || loopbackJobPending || workerExit.load(); });
 
             if (workerExit.load())
                 return;
@@ -282,6 +313,12 @@ void EchoCancellerEngine::workerLoop()
                 doNs = true;
                 level = nsJobLevel;
                 nsJobPending = false;
+            }
+            else if (agcJobPending)
+            {
+                doAgc = true;
+                agc = agcJobSettings;
+                agcJobPending = false;
             }
             else
             {
@@ -318,6 +355,18 @@ void EchoCancellerEngine::workerLoop()
                 nsReady.store (true, std::memory_order_release);
             }
 
+            if (doAgc)
+            {
+                // On -> on: start where the running stage is (it published its gain); off -> on: -1, the default
+                auto stage = createAgcStage (agc, runningAgcGainDb.load (std::memory_order_acquire));
+
+                if (! waitUntilConsumed (agcReady))
+                    return;
+
+                stagedAgc = std::move (stage);        // frees the stage the audio thread retired
+                agcReady.store (true, std::memory_order_release);
+            }
+
             if (doLoopback)
             {
                 auto r = createLoopbackResampler (rate);
@@ -346,10 +395,12 @@ void EchoCancellerEngine::startWorker()
     workerFailed.store (false);
     aecJobPending = false;
     nsJobPending = false;
+    agcJobPending = false;
     loopbackJobPending = false;
     loopbackReady.store (false, std::memory_order_relaxed);
     aec3Ready.store (false, std::memory_order_relaxed);
     nsReady.store (false, std::memory_order_relaxed);
+    agcReady.store (false, std::memory_order_relaxed);
     worker = std::thread (&EchoCancellerEngine::workerLoop, this);
 }
 
@@ -416,6 +467,7 @@ void EchoCancellerEngine::prepare (double sampleRate, int maxBlockSize, int loop
     // stays not ready, so process() passes the mic through and the processor uses its dry path.
     currentParams = pendingParams;
     requestedNsLevel = pendingNsLevel;
+    requestedAgc = pendingAgc;
     aec3Error.store (false, std::memory_order_release);   // fresh instances below: a previous fault no longer applies
     try
     {
@@ -428,6 +480,10 @@ void EchoCancellerEngine::prepare (double sampleRate, int maxBlockSize, int loop
         noiseSuppressor = createNoiseSuppressor (requestedNsLevel);
         preNsAudio = std::make_unique<AudioBuffer> (kAecRate, 1, kAecRate, 1, kAecRate, 1);
         nsScratchAudio = std::make_unique<AudioBuffer> (kAecRate, 1, kAecRate, 1, kAecRate, 1);
+
+        agcStage = createAgcStage (requestedAgc);
+        runningAgcGainDb.store (agcStage != nullptr ? agcStage->getLastGainDb() : -1.0f, std::memory_order_release);
+        outputLimiter = std::make_unique<aec::OutputLimiter>();
     }
     catch (...)
     {
@@ -480,7 +536,8 @@ void EchoCancellerEngine::prepare (double sampleRate, int maxBlockSize, int loop
     sizeFifo (outputFifo, outputBuffer, outputPrefill + maxFramesPerChunk * maxHostPerFrame + hostBlockSize);
 
     for (auto* v : { &tempNearFrame, &tempFarFrame, &farDelayedFrame, &nsOutFrame, &preNsFrame,
-                     &bypassFrame, &mainFrame, &residualFrame, &outFrame48 })
+                     &bypassFrame, &mainFrame, &residualFrame, &outFrame48,
+                     &agcFrame, &agcScratchFrame, &limitedFrame })
         v->assign ((size_t) kAecFrameSize, 0.0f);
 
     // Loopback temp buffers: room for the upsampled worst case (8 kHz loopback -> 48 kHz)
@@ -499,10 +556,16 @@ void EchoCancellerEngine::prepare (double sampleRate, int maxBlockSize, int loop
     debounceCountdown = 0;
     nsLevelDirty = false;
     nsDebounceCountdown = 0;
+    agcDirty = false;
+    agcDebounceCountdown = 0;
+    limiterOn = limiterEnabled.load (std::memory_order_acquire);
+    clampHostOutput = limiterOn;
     wasEnabled = false;   // the first enabled block drains, (re)activates capture and re-primes
     lastProcessTicks = 0;
     aecSwapCount = 0;
+    agcSwapCount = 0;
     loopbackJobCount = 0;
+    limiterReduction.takeDb();   // no reduction held from before this prepare reaches the LIM meter
 
     // Start background worker for AEC3 / suppressor recreation
     startWorker();
@@ -528,11 +591,17 @@ void EchoCancellerEngine::releaseLocked()
     preNsAudio.reset();
     nsScratchAudio.reset();
 
+    agcStage.reset();
+    incomingAgc.reset();
+    outputLimiter.reset();
+
     stagedInstance = {};
     stagedSuppressor.reset();
+    stagedAgc.reset();
     stagedLoopbackResampler.reset();
     aec3Ready.store (false);
     nsReady.store (false);
+    agcReady.store (false);
     loopbackReady.store (false);
 }
 
@@ -593,6 +662,8 @@ void EchoCancellerEngine::resetFifos()
     farMonitorDelay.reset();
     if (hpFilter != nullptr)
         hpFilter->Reset();
+    if (outputLimiter != nullptr)
+        outputLimiter->reset();   // gain state only; the AGC keeps its level estimate (it has no allocation-free reset)
     muteRemaining = getLatencySamples();
     resetFadePos = 0;
 
@@ -618,6 +689,10 @@ void EchoCancellerEngine::process (const float* micIn, float* out, int numSample
         requestedNsLevel = pendingNsLevel;
         nsLevelDirty = false;
         postNsJob (requestedNsLevel);
+
+        requestedAgc = pendingAgc;
+        agcDirty = false;
+        postAgcJob (requestedAgc);
     }
 
     if (numSamples <= 0)
@@ -691,6 +766,18 @@ void EchoCancellerEngine::process (const float* micIn, float* out, int numSample
             postNsJob (requestedNsLevel);
         }
         nsLevelDirty = false;
+    }
+
+    // AGC settings changed — debounce and signal background worker (AEC3 is not touched)
+    if (agcDirty && agcDebounceCountdown > 0)
+        --agcDebounceCountdown;
+
+    if (agcDirty && agcDebounceCountdown <= 0)
+    {
+        if (! sameAgc (pendingAgc, requestedAgc))
+            postAgcJob (pendingAgc);
+        requestedAgc = pendingAgc;   // values changed while off are recorded too
+        agcDirty = false;
     }
 
     readLoopback (loopback, numSamples);
@@ -782,6 +869,13 @@ void EchoCancellerEngine::processChunk (const float* micIn, float* out, int n)
 
         const int m = outputResampler.process (outFrame48.data(), kAecFrameSize,
                                                tempHostOut.data(), (int) tempHostOut.size());
+
+        // The resampler's band-limited interpolation can overshoot the 48 kHz ceiling slightly. Not in
+        // the frame the limiter is switched on: it still fades from the unlimited signal.
+        if (clampHostOutput)
+            for (int i = 0; i < m; ++i)
+                tempHostOut[(size_t) i] = juce::jlimit (-aec::OutputLimiter::kCeilingLinear, aec::OutputLimiter::kCeilingLinear,
+                                                        tempHostOut[(size_t) i]);
         fifoWrite (outputFifo, outputBuffer, tempHostOut.data(), m);
     }
 
@@ -950,13 +1044,18 @@ void EchoCancellerEngine::processFrame()
     for (int i = 0; i < kAecFrameSize; ++i)
         residualFrame[(size_t) i] = bypass[i] - mainOut[i];
 
+    // Auto gain on the voice path only (after NS and the residual); the monitor feeds never pass it
+    processAgc (mainOut);
+
     // Monitor reference gets the same processing delay, so latency never changes
     farMonitorDelay.process (tempFarFrame.data(), farDelayedFrame.data(), kAecFrameSize);
 
     const float* selected = monitorFarEnd.load (std::memory_order_acquire) ? farDelayedFrame.data()
                           : monitorResidual.load (std::memory_order_acquire) ? residualFrame.data()
-                          : mainOut;
+                          : agcFrame.data();
     std::memcpy (outFrame48.data(), selected, sizeof (float) * kAecFrameSize);
+
+    applyLimiter();
 
     if (levelChange)
     {
@@ -967,6 +1066,103 @@ void EchoCancellerEngine::processFrame()
     }
 
     std::memcpy (prevNearFrame, tempNearFrame.data(), sizeof (prevNearFrame));
+}
+
+static_assert (std::atomic<float>::is_always_lock_free, "runningAgcGainDb is stored on the audio thread");
+
+void EchoCancellerEngine::processAgc (const float* mainOut)
+{
+    // A new stage from the worker (settings change or on/off): run old and new on this frame and
+    // crossfade, as the suppressor level change does. AGC2 has no look-ahead, so there is no pre-roll.
+    // Equal-gain weights: both are the same signal at different gains (equal-power would bump the
+    // level by up to 3 dB mid-frame).
+    auto crossfade = [] (float* dst, const float* from, const float* to)
+    {
+        for (int i = 0; i < kAecFrameSize; ++i)
+        {
+            const float t = ((float) i + 0.5f) / (float) kAecFrameSize;
+            dst[i] = from[i] * (1.0f - t) + to[i] * t;
+        }
+    };
+
+    const bool agcChange = agcReady.load (std::memory_order_acquire);
+
+    if (agcChange)
+        incomingAgc = std::move (stagedAgc);
+
+    const bool oldOn = agcStage != nullptr;
+    const bool newOn = agcChange ? incomingAgc != nullptr : oldOn;
+    const float prob = agcSpeechProbability.load (std::memory_order_relaxed);
+
+    float* agcOut = agcFrame.data();
+    float* scratch = agcScratchFrame.data();
+    std::memcpy (agcOut, mainOut, sizeof (float) * kAecFrameSize);
+
+    if (agcChange && oldOn && newOn)              // settings change
+    {
+        std::memcpy (scratch, mainOut, sizeof (float) * kAecFrameSize);
+        agcStage->process (agcOut, prob);
+        incomingAgc->process (scratch, prob);
+        crossfade (agcOut, agcOut, scratch);
+    }
+    else if (agcChange && oldOn)                  // on -> off
+    {
+        agcStage->process (agcOut, prob);
+        crossfade (agcOut, agcOut, mainOut);
+    }
+    else if (agcChange && newOn)                  // off -> on
+    {
+        incomingAgc->process (agcOut, prob);
+        crossfade (agcOut, mainOut, agcOut);
+    }
+    else if (oldOn)
+    {
+        agcStage->process (agcOut, prob);
+    }
+
+    if (agcChange)
+    {
+        // Retire the old stage through the staged slot; the worker frees it
+        stagedAgc = std::move (agcStage);
+        agcStage = std::move (incomingAgc);
+        ++agcSwapCount;
+        agcReady.store (false, std::memory_order_release);
+    }
+
+    runningAgcGainDb.store (agcStage != nullptr ? agcStage->getLastGainDb() : -1.0f, std::memory_order_release);
+}
+
+void EchoCancellerEngine::applyLimiter()
+{
+    // The limiter always runs, so its gain state is current whenever it is switched on
+    float* out = outFrame48.data();
+    const float* limited = limitedFrame.data();
+    outputLimiter->process (out, limitedFrame.data());
+
+    const bool on = limiterEnabled.load (std::memory_order_acquire);
+
+    const bool switched = on != limiterOn;
+    clampHostOutput = on && ! switched;
+
+    if (switched)
+    {
+        // Equal-gain crossfade over this frame: both are the same signal (an equal-power one would
+        // bump the level by up to 3 dB)
+        for (int i = 0; i < kAecFrameSize; ++i)
+        {
+            const float t = ((float) i + 0.5f) / (float) kAecFrameSize;
+            const float w = on ? t : 1.0f - t;   // weight of the limited signal
+            out[i] = out[i] * (1.0f - w) + limited[i] * w;
+        }
+        limiterOn = on;
+    }
+    else if (on)
+    {
+        std::memcpy (out, limited, sizeof (float) * kAecFrameSize);
+    }
+
+    if (on)
+        limiterReduction.push (outputLimiter->getLastReductionDb());
 }
 
 void EchoCancellerEngine::preRollAec (AEC3Instance& inst, int delayMs)

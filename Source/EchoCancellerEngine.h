@@ -15,6 +15,8 @@
 #include "DelayLine.h"
 #include "PeakHold.h"
 #include "Resampler.h"
+#include "AgcStage.h"
+#include "OutputLimiter.h"
 
 // Forward declarations for WebRTC AEC3
 namespace webrtc {
@@ -163,6 +165,20 @@ public:
         A value set before prepare() is used directly by prepare(). */
     void setNoiseLevel (int choiceIndex);
 
+    /** Auto gain (AGC2 adaptive digital) on the voice path, after NS. Called from the audio thread each
+        block; the settings are sanitised and a change is debounced, then the worker builds the new stage
+        (nullptr when disabled; AEC3 is not recreated). A value set before prepare() is built by prepare(). */
+    void setAgc (const aec::AgcSettings& settings);
+
+    /** Output limiter (-1 dBFS ceiling) after the monitor selection. Any thread; no worker involved. */
+    void setLimiterEnabled (bool on) { limiterEnabled.store (on, std::memory_order_release); }
+
+    /** Test hook: >= 0 replaces the AGC's voice activity probability, < 0 runs the real VAD. */
+    void setAgcSpeechProbabilityForTesting (float p) { agcSpeechProbability.store (p, std::memory_order_relaxed); }
+
+    /** AGC stages swapped in from the worker since prepare(). Audio thread / tests. */
+    int getAgcSwapCount() const { return agcSwapCount; }
+
     /** Factory reset, message thread. Clears the AEC3 error (restarting the worker if it stopped on
         it) and has the worker build a fresh AEC3 instance and suppressor from the current values,
         swapped in by the audio thread as on a parameter change: no allocation or join on the audio
@@ -192,6 +208,7 @@ public:
 
     // Meters — pushed by the audio thread, taken by the UI timer
     aec::PeakHold inPeak, refPeak, outPeak;
+    aec::ReductionHold limiterReduction;   // output limiter gain reduction (dB), pushed while the limiter is on
 
     // Spectrum display bands — written by audio thread, read by UI timer
     static constexpr int kSpectrumBands = 16;
@@ -232,6 +249,13 @@ private:
     float renderHistory[kNumBands][kBandSize] = {};                // last frame's render bands
     float prevNearFrame[kAecFrameSize] = {};                       // last frame's raw near end (AnalyzeCapture)
 
+    // Level stage (audio thread). agcStage nullptr = AGC off; the limiter always runs (its state stays warm).
+    std::unique_ptr<aec::AgcStage> agcStage;
+    std::unique_ptr<aec::AgcStage> incomingAgc;                    // only during an AGC change frame
+    std::unique_ptr<aec::OutputLimiter> outputLimiter;
+    bool limiterOn = true;          // limiter state applied to the last frame (audio thread)
+    bool clampHostOutput = true;    // limiter on for the whole last frame: clamp its host-rate samples
+
     int hostSampleRate = 0;
     int hostBlockSize = 0;
     int outputPrefill = 0;      // P
@@ -262,6 +286,7 @@ private:
     // Frame buffers (kAecFrameSize each)
     std::vector<float> tempNearFrame, tempFarFrame, farDelayedFrame;
     std::vector<float> nsOutFrame, preNsFrame, bypassFrame, mainFrame, residualFrame, outFrame48;
+    std::vector<float> agcFrame, agcScratchFrame, limitedFrame;
     float fadeIn[kAecFrameSize] = {}, fadeOut[kAecFrameSize] = {};
     float bandFadeIn[kBandSize] = {}, bandFadeOut[kBandSize] = {};
 
@@ -290,12 +315,15 @@ private:
     int loopbackRetryCountdown = 0;         // host samples until a failed build is retried
     int loopbackJobCount = 0;
     int aecSwapCount = 0;
+    int agcSwapCount = 0;
 
     std::atomic<bool> enabled { true };
     bool wasEnabled = false; // transition detection — audio thread only
     std::atomic<bool> monitorFarEnd { false };
     std::atomic<bool> monitorResidual { false };
     std::atomic<float> latencyCompMs { 0.0f };
+    std::atomic<bool> limiterEnabled { true };
+    std::atomic<float> agcSpeechProbability { -1.0f };
 
     // processBlock gap detection — audio thread only
     int64_t lastProcessTicks = 0;
@@ -318,7 +346,12 @@ private:
     bool nsLevelDirty = false;
     int nsDebounceCountdown = 0;
 
-    // Background worker: one thread, two "latest wins" job slots (AEC3 params, NS level)
+    aec::AgcSettings pendingAgc;     // last value given to setAgc (sanitised)
+    aec::AgcSettings requestedAgc;   // last value sent to the worker
+    bool agcDirty = false;
+    int agcDebounceCountdown = 0;
+
+    // Background worker: one thread, "latest wins" job slots (AEC3 params, NS level, AGC, loopback rate)
     std::thread worker;
     std::mutex workerMutex;
     void releaseLocked();   // release() body; lifecycleMutex held
@@ -332,6 +365,8 @@ private:
     Params aecJobParams;
     bool nsJobPending = false;
     int nsJobLevel = 0;
+    bool agcJobPending = false;
+    aec::AgcSettings agcJobSettings;
     bool loopbackJobPending = false;
     int loopbackJobRate = 0;
 
@@ -341,12 +376,24 @@ private:
     std::atomic<bool> aec3Ready { false };
     std::unique_ptr<webrtc::NoiseSuppressor> stagedSuppressor;
     std::atomic<bool> nsReady { false };
+    std::unique_ptr<aec::AgcStage> stagedAgc;
+    std::atomic<bool> agcReady { false };
+    // Gain (dB) the running AGC stage applied to the last frame, -1 while AGC is off. Audio thread writes
+    // each frame; the worker reads it to start an on -> on replacement stage at that gain (no re-learn surge).
+    std::atomic<float> runningAgcGainDb { -1.0f };
     std::unique_ptr<aec::Resampler> stagedLoopbackResampler;
     int stagedLoopbackRate = 0;
     std::atomic<bool> loopbackReady { false };
 
     void postAecJob (const Params& p);
     void postNsJob (int level);
+    void postAgcJob (const aec::AgcSettings& s);
+    /** nullptr when s is off. initialGainDb as AgcStage's (< 0: the default start gain). */
+    static std::unique_ptr<aec::AgcStage> createAgcStage (const aec::AgcSettings& s, float initialGainDb = -1.0f);
+    /** Same effective AGC: equal settings, or both disabled (the other values then do not matter). */
+    static bool sameAgc (const aec::AgcSettings& a, const aec::AgcSettings& b) { return a == b || (! a.enabled && ! b.enabled); }
+    void processAgc (const float* mainOut);   // mainOut -> agcFrame (AGC stage, change crossfade)
+    void applyLimiter();                      // outFrame48 in place (limited / unlimited, switch crossfade)
     void postLoopbackJob (int rate);
     static std::unique_ptr<aec::Resampler> createLoopbackResampler (int rate);
     void workerLoop();

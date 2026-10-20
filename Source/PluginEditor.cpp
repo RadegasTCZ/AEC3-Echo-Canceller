@@ -11,12 +11,12 @@ AEC3EchoCancellerAudioProcessorEditor::AEC3EchoCancellerAudioProcessorEditor (AE
       audioProcessor (p),
       header (p),
       echoBox (p),
-      noiseBox (p),
+      voiceBox (p),
       advancedPage (p)
 {
     addAndMakeVisible (header);
     addAndMakeVisible (echoBox);
-    addAndMakeVisible (noiseBox);
+    addAndMakeVisible (voiceBox);
     addChildComponent (advancedPage);
 
     header.onAdvancedToggled = [this] (bool open) { showAdvanced (open); };
@@ -48,7 +48,7 @@ void AEC3EchoCancellerAudioProcessorEditor::showAdvanced (bool open)
     advancedShown = open;
     audioProcessor.setAdvancedOpen (open);
     echoBox.setVisible (! open);
-    noiseBox.setVisible (! open);
+    voiceBox.setVisible (! open);
     advancedPage.setVisible (open);
     header.setAdvancedShown (open);
     header.setTab (advancedPage.getTab());
@@ -102,15 +102,15 @@ void AEC3EchoCancellerAudioProcessorEditor::timerCallback()
     else
     {
         echoBox.tick (dt);
-        noiseBox.tick (dt);
+        voiceBox.tick (dt);
         echoBox.getStrengthSelector().refresh();
+        voiceBox.getAgcSelector().refresh();
     }
 
     auto& loopback = audioProcessor.getLoopbackCapture();
     if (loopback.hasDeviceListChanged())
         header.refreshDeviceList();
 
-    loopback.checkHealthAndRecover();   // restart the capture thread if it died
     updateConnection();
 }
 
@@ -123,6 +123,6 @@ void AEC3EchoCancellerAudioProcessorEditor::resized()
 {
     header.setBounds (0, 0, kWidth, aec::ui::Header::kHeight);
     echoBox.setBounds (8, 44, aec::ui::EchoBox::kWidth, aec::ui::EchoBox::kHeight);
-    noiseBox.setBounds (8, 140, aec::ui::NoiseBox::kWidth, aec::ui::NoiseBox::kHeight);
+    voiceBox.setBounds (8, 148, aec::ui::VoiceBox::kWidth, aec::ui::VoiceBox::kHeight);
     advancedPage.setBounds (8, 44, aec::ui::AdvancedPage::kWidth, aec::ui::AdvancedPage::kHeight);
 }

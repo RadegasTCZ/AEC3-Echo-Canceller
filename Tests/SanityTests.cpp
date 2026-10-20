@@ -16,7 +16,7 @@ namespace
             {
                 AEC3EchoCancellerAudioProcessor p;
                 expectEquals (p.getName(), juce::String ("AEC3 Echo Canceller"));
-                expectEquals (juce::String (JucePlugin_VersionString), juce::String ("6.0.0"));
+                expectEquals (juce::String (JucePlugin_VersionString), juce::String ("6.1.0"));
                 expectEquals (juce::String (JucePlugin_Manufacturer), juce::String ("RadegasTCZ"));
             }
 

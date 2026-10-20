@@ -2,6 +2,8 @@
 #include "../Source/EchoCancellerEngine.h"
 #include "../Source/Resampler.h"
 #include "../Source/Strength.h"
+#include "../Source/AgcPresets.h"
+#include "../Source/OutputLimiter.h"
 #include "AllocCounter.h"
 #include "FakeLoopback.h"
 #include "TestSignals.h"
@@ -887,6 +889,450 @@ public:
             logMessage ("lifecycle race: " + juce::String (cycles) + " prepare/release cycles, " + juce::String (resets.load()) + " resets");
             expect (cycles > 0);
         }
+
+        runLevelTests();
+        runLevelFixTests();
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // v6.1.0 final-review fixes: AGC on -> on keeps its gain (F4); limiter meter cleared on prepare (F7)
+    // ------------------------------------------------------------------------------------------------
+
+    void runLevelFixTests()
+    {
+        beginTest ("AGC on -> on preset change starts from the running gain: no re-learn surge");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.setLimiterEnabled (false);   // the surge would otherwise be hidden by the limiter
+            e.setAgc (agcFor (aec::AgcPreset::Normal));
+            e.setAgcSpeechProbabilityForTesting (1.0f);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            const int changeAt = 1000, window = 200;   // 10 s converged on Normal; 2 s windows
+            const int blocks = changeAt + 60 + window + 10;
+            const auto mic = aec::test::speechLikeSine (blocks * 480, 1000.0f, -20.0f, 48000.0);
+            std::vector<float> out (mic.size(), 0.0f);
+            int swapBlock = -1;
+            for (int b = 0; b < blocks; ++b)
+            {
+                e.setAgc (agcFor (b >= changeAt ? aec::AgcPreset::Strong : aec::AgcPreset::Normal));
+                const int before = e.getAgcSwapCount();
+                e.process (mic.data() + b * 480, out.data() + b * 480, 480, lb);
+                if (e.getAgcSwapCount() > before)
+                    swapBlock = b;
+                if (b >= changeAt + 20 && swapBlock < 0)
+                    juce::Thread::sleep (20);   // the stage is staged before the next block
+            }
+
+            const int lat = e.getLatencySamples();
+            auto peakOver = [&] (int fromBlock, int numBlocks)
+            {
+                float m = 0.0f;
+                for (int i = fromBlock * 480 + lat; i < (fromBlock + numBlocks) * 480 + lat && i < (int) out.size(); ++i)
+                    m = juce::jmax (m, std::abs (out[(size_t) i]));
+                return m;
+            };
+
+            expectEquals (e.getAgcSwapCount(), 1);
+            expect (swapBlock > 0 && swapBlock + window <= blocks, "swap at block " + juce::String (swapBlock));
+            if (swapBlock > 0)
+            {
+                const float beforePeak = peakOver (changeAt - window, window);
+                const float afterPeak = peakOver (swapBlock, window);
+                const float riseDb = 20.0f * std::log10 (afterPeak / juce::jmax (beforePeak, 1.0e-9f));
+                logMessage ("AGC Normal -> Strong at -20 dBFS: peak 2 s before " + juce::String (beforePeak, 4) + ", 2 s after swap "
+                            + juce::String (afterPeak, 4) + " (" + juce::String (riseDb, 2) + " dB)");
+                expectLessOrEqual (riseDb, 3.0f);
+            }
+        }
+
+        beginTest ("prepare clears a held limiter reduction");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            runEngine (e, aec::test::sine (48000, 997.0f, 2.0f, 48000.0), 480, lb);
+            e.prepare (48000.0, 480);
+            expectEquals (e.limiterReduction.takeDb(), 0.0f);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // AGC and output limiter (v6.1)
+    // ------------------------------------------------------------------------------------------------
+
+    void runLevelTests()
+    {
+        constexpr float kCeiling = aec::OutputLimiter::kCeilingLinear;
+
+        beginTest ("AGC off + limiter off: no level stage touches the signal");
+        {
+            // The "NS off is transparent" setup and assertions with the limiter switched off
+            Engine e;
+            e.setNoiseLevel (0);
+            e.setLimiterEnabled (false);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            const int n = 3 * 48000, lat = e.getLatencySamples();
+            const auto mic = aec::test::sine (n, 1000.0f, 0.3f, 48000.0);
+            const auto out = runEngine (e, mic, 480, lb);
+            const auto chain = runAec3Chain (mic);
+            const int chainLag = Engine::kSplitDelay48k + Engine::kAecDelay48k;
+
+            const int start = 48000, len = n - start - lat;
+            std::vector<float> err ((size_t) len), errChain ((size_t) len);
+            for (int i = 0; i < len; ++i)
+            {
+                err[(size_t) i] = out[(size_t) (start + lat + i)] - mic[(size_t) (start + i)];
+                errChain[(size_t) i] = out[(size_t) (start + lat + i)] - chain[(size_t) (start + chainLag + i)];
+            }
+            const float errDb = aec::test::rmsDb (err.data(), len);
+            const float chainDb = aec::test::rmsDb (errChain.data(), len);
+            expect (chainDb < -40.0f, "rms error vs AEC3 chain " + juce::String (chainDb, 1) + " dB");
+            expect (errDb < -20.0f, "rms error vs input " + juce::String (errDb, 1) + " dB");
+
+            // Below the knee the limiter is the identity; above it, it is what keeps the output down
+            auto runAt = [] (float amp, bool limiter)
+            {
+                Engine x;
+                x.setNoiseLevel (0);
+                x.setLimiterEnabled (limiter);
+                x.prepare (48000.0, 480);
+                aec::test::FakeLoopback l;
+                return runEngine (x, aec::test::sine (2 * 48000, 1000.0f, amp, 48000.0), 480, l);
+            };
+
+            const auto quietOn = runAt (0.1f, true), quietOff = runAt (0.1f, false);
+            float maxDiff = 0.0f;
+            for (size_t i = 0; i < quietOn.size(); ++i)
+                maxDiff = juce::jmax (maxDiff, std::abs (quietOn[i] - quietOff[i]));
+
+            const float hotOn = maxAbsFrom (runAt (2.0f, true), 0), hotOff = maxAbsFrom (runAt (2.0f, false), 0);
+            logMessage ("transparency: -20 dBFS on/off max diff " + juce::String (maxDiff, 9) + "; +6 dBFS max |out| limiter off "
+                        + juce::String (hotOff, 4) + ", on " + juce::String (hotOn, 4));
+            expectLessOrEqual (maxDiff, 1.0e-6f);
+            expectGreaterThan (hotOff, hotOn);
+        }
+
+        beginTest ("AGC on raises a quiet voice-band signal");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.setAgc (agcFor (aec::AgcPreset::Normal));   // before prepare: built synchronously
+            e.setAgcSpeechProbabilityForTesting (1.0f);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            const int n = 12 * 48000;
+            const auto mic = aec::test::speechLikeSine (n, 1000.0f, -40.0f, 48000.0);
+            const auto out = runEngine (e, mic, 480, lb);
+            const float lastDb = onRmsDb (out, (size_t) (n - 48000), (size_t) n, e.getLatencySamples(), 48000.0);
+            logMessage ("AGC raise: -40 dBFS speech-like 1 kHz, last-second rms " + juce::String (lastDb, 1) + " dBFS");
+            expectGreaterOrEqual (lastDb, -25.0f);
+        }
+
+        beginTest ("AGC does not touch Hear reference / Hear removed");
+        {
+            const int n = 5 * 48000;
+            const auto mic = aec::test::speechLikeSine (n, 1000.0f, -40.0f, 48000.0);
+            const auto noisyMic = aec::test::whiteNoise (n, 0.05f, 111);
+            const auto ref = aec::test::whiteNoise (n, 0.1f, 112);
+
+            // mode 0: main output, 1: Hear reference, 2: Hear removed
+            auto runMode = [&] (int mode, bool agc)
+            {
+                Engine x;
+                x.setNoiseLevel (mode == 2 ? 2 : 0);
+                if (agc)
+                    x.setAgc (agcFor (aec::AgcPreset::Strong));
+                x.setAgcSpeechProbabilityForTesting (1.0f);
+                x.setMonitorFarEnd (mode == 1);
+                x.setMonitorNoiseResidual (mode == 2);
+                x.prepare (48000.0, 480, 48000);
+                aec::test::FakeLoopback l (48000);
+                const auto out = runEngine (x, mode == 2 ? noisyMic : mic, 480, l, mode == 1 ? &ref : nullptr);
+                return aec::test::rmsDb (out.data() + n - 2 * 48000, 2 * 48000);
+            };
+
+            const float mainOff = runMode (0, false), mainOn = runMode (0, true);
+            const float refOff = runMode (1, false), refOn = runMode (1, true);
+            const float resOff = runMode (2, false), resOn = runMode (2, true);
+            logMessage ("AGC Strong: main " + juce::String (mainOff, 2) + " -> " + juce::String (mainOn, 2) + " dB, Hear reference "
+                        + juce::String (refOff, 2) + " -> " + juce::String (refOn, 2) + " dB, Hear removed "
+                        + juce::String (resOff, 2) + " -> " + juce::String (resOn, 2) + " dB");
+            expectGreaterThan (mainOn - mainOff, 6.0f, "the AGC is not active in this setup");
+            expect (refOff > -60.0f && resOff > -60.0f, "monitor feeds silent");
+            expectLessOrEqual (std::abs (refOn - refOff), 0.5f);
+            expectLessOrEqual (std::abs (resOn - resOff), 0.5f);
+        }
+
+        beginTest ("AGC settings change and on/off do not swap AEC3");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            const auto mic = aec::test::speechLikeSine (300 * 480, 1000.0f, -30.0f, 48000.0);
+            std::vector<float> out (480, 0.0f);
+            aec::AgcSettings off;
+            const aec::AgcSettings changes[] = { agcFor (aec::AgcPreset::Normal), agcFor (aec::AgcPreset::Strong),
+                                                 agcFor (aec::AgcPreset::Gentle), off, agcFor (aec::AgcPreset::Normal) };
+            int block = 0;
+            for (const auto& s : changes)
+            {
+                for (int b = 0; b < 40; ++b, ++block)
+                {
+                    e.setAgc (s);
+                    e.process (mic.data() + (block % 300) * 480, out.data(), 480, lb);
+                    if (b >= 24)
+                        juce::Thread::sleep (1);   // let the worker build the stage
+                }
+            }
+            logMessage ("AGC changes: AGC swaps " + juce::String (e.getAgcSwapCount()) + ", AEC3 swaps " + juce::String (e.getAecSwapCount()));
+            expectEquals (e.getAgcSwapCount(), 5);
+            expectEquals (e.getAecSwapCount(), 0);
+        }
+
+        beginTest ("AGC preset change (on -> on): no level bump in the crossfade frame");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.setAgc (agcFor (aec::AgcPreset::Normal));
+            e.setAgcSpeechProbabilityForTesting (1.0f);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            // The change at block 266 is posted 24 blocks later; the stage is swapped in at block 290,
+            // 10 frames into a 300 ms "on" stretch of the speech-like signal
+            const int blocks = 340, changeAt = 266;
+            const auto mic = aec::test::speechLikeSine (blocks * 480, 1000.0f, -40.0f, 48000.0);
+            std::vector<float> out (mic.size(), 0.0f);
+            int swapBlock = -1;
+            for (int b = 0; b < blocks; ++b)
+            {
+                e.setAgc (agcFor (b >= changeAt ? aec::AgcPreset::Strong : aec::AgcPreset::Normal));
+                const int before = e.getAgcSwapCount();
+                e.process (mic.data() + b * 480, out.data() + b * 480, 480, lb);
+                if (e.getAgcSwapCount() > before)
+                    swapBlock = b;
+                if (b >= changeAt + 20 && swapBlock < 0)
+                    juce::Thread::sleep (20);   // the stage is staged before the next block
+            }
+
+            // The frame processed in block b leaves the engine (480 prefill + pad) 722 samples later
+            constexpr int kDspDelay = Engine::kSplitDelay48k + Engine::kAecDelay48k + Engine::kNsDelay48k;
+            const int offset = e.getLatencySamples() - kDspDelay;
+            auto framePeak = [&] (int b)
+            {
+                float m = 0.0f;
+                for (int i = 0; i < 480; ++i)
+                    m = juce::jmax (m, std::abs (out[(size_t) (b * 480 + offset + i)]));
+                return m;
+            };
+            // The three frames' input (frame start minus the DSP delay) must all be in an "on" stretch
+            bool allOn = swapBlock > 0;
+            for (int i = (swapBlock - 1) * 480 - kDspDelay; allOn && i < (swapBlock + 2) * 480; ++i)
+                allOn = aec::test::speechLikeOn ((size_t) i, 48000.0);
+
+            expectEquals (e.getAgcSwapCount(), 1);
+            expect (allOn && swapBlock + 2 < blocks, "swap at block " + juce::String (swapBlock) + " is outside the measured speech stretch");
+
+            if (allOn && swapBlock + 2 < blocks)
+            {
+                const float prev = framePeak (swapBlock - 1), cross = framePeak (swapBlock), next = framePeak (swapBlock + 1);
+                constexpr float kTolerance = 1.005f;   // +0.04 dB: the old stage's own adaptation within one frame
+                logMessage ("AGC Normal -> Strong: swap at block " + juce::String (swapBlock) + ", frame peaks before " + juce::String (prev, 4)
+                            + ", crossfade " + juce::String (cross, 4) + ", after " + juce::String (next, 4));
+                expectLessOrEqual (cross, juce::jmax (prev, next) * kTolerance);
+            }
+        }
+
+        beginTest ("AGC automation storm: no audio-thread allocation, no click");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            // 10 s changing every 20 blocks (inside the debounce), then 6 s changing every 30 blocks (each applied)
+            const int stormBlocks = 1000, blocks = stormBlocks + 600;
+            const auto mic = aec::test::sine (blocks * 480, 100.0f, 0.5f, 48000.0);
+            std::vector<float> out (mic.size(), 0.0f);
+            const aec::AgcSettings off;
+            const aec::AgcSettings seq[] = { agcFor (aec::AgcPreset::Gentle), off, agcFor (aec::AgcPreset::Normal),
+                                             agcFor (aec::AgcPreset::Strong), off, agcFor (aec::AgcPreset::Gentle) };
+
+            int allocs = -1;
+            {
+                aec::test::ScopedAllocCheck check;
+                int atWarm = 0;   // from block 100: Debug AEC3 logs (allocates) during its initial warm-up
+                for (int b = 0; b < blocks; ++b)
+                {
+                    if (b == 100) atWarm = check.count();
+                    const int step = b < stormBlocks ? b / 20 : (b - stormBlocks) / 30;
+                    e.setAgc (seq[step % 6]);
+                    e.process (mic.data() + b * 480, out.data() + b * 480, 480, lb);
+                    if (b >= stormBlocks && (b - stormBlocks) % 30 == 29)
+                        juce::Thread::sleep (2);   // let the worker build the stage
+                }
+                allocs = check.count() - atWarm;
+            }
+
+            const float maxStep = maxStepFrom (out, 100 * 480);
+            const int zeros = longestZeroRun (out, 100 * 480);
+            logMessage ("AGC storm: AGC swaps " + juce::String (e.getAgcSwapCount()) + ", AEC3 swaps " + juce::String (e.getAecSwapCount())
+                        + ", max step " + juce::String (maxStep, 4) + ", longest zero run " + juce::String (zeros)
+                        + ", audio-thread allocations " + juce::String (allocs));
+            expectGreaterOrEqual (e.getAgcSwapCount(), 15);
+            expectEquals (e.getAecSwapCount(), 0);
+            expectEquals (allocs, 0);
+            expect (maxStep <= 0.05f, "step " + juce::String (maxStep));
+            expect (zeros <= 8, "zero run " + juce::String (zeros));
+        }
+
+        beginTest ("limiter on: +6 dBFS input never exceeds -1 dBFS at 48k, 44.1k and 96k host rates");
+        {
+            for (const int rate : { 48000, 44100, 96000 })
+                for (const bool hearReference : { false, true })
+                {
+                    Engine e;
+                    e.setNoiseLevel (0);
+                    e.setMonitorFarEnd (hearReference);
+                    e.prepare ((double) rate, rate / 100, 48000);
+                    aec::test::FakeLoopback lb (48000);
+                    const auto mic = aec::test::sine (3 * rate, 997.0f, 2.0f, (double) rate);
+                    const auto ref = aec::test::sine (3 * 48000 + 4800, 997.0f, 2.0f, 48000.0);   // clipped to full scale by the int16 loopback
+                    const auto out = runEngine (e, mic, rate / 100, lb, hearReference ? &ref : nullptr, 48000.0 / rate);
+                    const float peak = maxAbsFrom (out, 0);
+                    logMessage (juce::String (rate) + (hearReference ? " Hear reference" : " main") + ": max |out| " + juce::String (peak, 6)
+                                + " (ceiling " + juce::String (kCeiling, 6) + "), limiter reduction "
+                                + juce::String (e.limiterReduction.takeDb(), 1) + " dB");
+                    expectLessOrEqual (peak, kCeiling + 1.0e-6f);
+                    expectGreaterThan (peak, 0.8f, "the signal never reached the limiter");
+                }
+        }
+
+        beginTest ("limiter toggle on a hot sine has no click");
+        {
+            // 48k: no resampler; 44.1k: the host-rate clamp after the output resampler is exercised too
+            for (const int rate : { 48000, 44100 })
+            {
+                Engine e;
+                e.setNoiseLevel (0);
+                const int block = rate / 100, blocks = 700;
+                e.prepare ((double) rate, block);
+                aec::test::FakeLoopback lb;
+                const auto mic = aec::test::sine (blocks * block, 100.0f, 2.0f, (double) rate);
+                std::vector<float> out (mic.size(), 0.0f);
+                for (int b = 0; b < blocks; ++b)
+                {
+                    e.setLimiterEnabled ((b / 30) % 2 == 0);
+                    e.process (mic.data() + b * block, out.data() + b * block, block, lb);
+                }
+
+                // Limiter-off stretches go above the ceiling, limiter-on stretches never (the toggle took effect)
+                float maxOff = 0.0f, maxOn = 0.0f;
+                for (int b = 100; b < blocks - 30; ++b)
+                {
+                    const int phase = b % 30;
+                    if (phase < 5 || phase > 25)
+                        continue;   // skip the switch frames and the pipeline latency around them
+                    float& m = (b / 30) % 2 == 0 ? maxOn : maxOff;
+                    for (int i = 0; i < block; ++i)
+                        m = juce::jmax (m, std::abs (out[(size_t) (b * block + i)]));
+                }
+
+                // Natural step of the +6 dBFS 100 Hz sine (clipped to full scale at the AEC3 input) is ~0.026;
+                // 0.05 is the "nsLevel automation on a sine" click threshold
+                const float maxStep = maxStepFrom (out, (size_t) (100 * block));
+                logMessage ("limiter toggle on a +6 dBFS 100 Hz sine at " + juce::String (rate) + ": max step " + juce::String (maxStep, 4)
+                            + ", max |out| on " + juce::String (maxOn, 4) + ", off " + juce::String (maxOff, 4));
+                expect (maxStep <= 0.05f, "step " + juce::String (maxStep));
+                expectLessOrEqual (maxOn, kCeiling + 1.0e-6f);
+                expectGreaterThan (maxOff, kCeiling + 0.05f);
+            }
+        }
+
+        beginTest ("measured lag == getLatencySamples with AGC on and limiter on");
+        {
+            for (const int rate : { 48000, 44100 })
+            {
+                Engine e;
+                e.setNoiseLevel (2);
+                e.setAgc (agcFor (aec::AgcPreset::Normal));
+                e.setAgcSpeechProbabilityForTesting (1.0f);
+                e.setLimiterEnabled (true);
+                e.prepare ((double) rate, rate / 100);
+                aec::test::FakeLoopback lb;
+                const auto mic = aec::test::whiteNoise (2 * rate, 0.1f, 113);
+                const auto out = runEngine (e, mic, rate / 100, lb);
+                const int lag = aec::test::crossCorrelationLag (slice (mic, 0, (size_t) rate), slice (out, 0, (size_t) rate + 4000), 4000);
+                logMessage (juce::String (rate) + " AGC + limiter: getLatencySamples " + juce::String (e.getLatencySamples())
+                            + ", measured lag " + juce::String (lag));
+                expect (std::abs (lag - e.getLatencySamples()) <= 1, "lag " + juce::String (lag));
+            }
+        }
+
+        beginTest ("AGC stage creation failure halts like an NS failure; factory reset recovers");
+        {
+            Engine e;
+            e.setNoiseLevel (0);
+            e.prepare (48000.0, 480);
+            aec::test::FakeLoopback lb;
+            const std::vector<float> mic (480, 0.01f);
+            std::vector<float> out (480, 0.0f);
+            e.failNextJobForTesting();
+            for (int b = 0; b < 60; ++b)
+            {
+                e.setAgc (agcFor (aec::AgcPreset::Normal));
+                e.process (mic.data(), out.data(), 480, lb);
+                juce::Thread::sleep (1);
+            }
+            const bool halted = e.hasError();
+            e.requestReset();
+            for (int b = 0; b < 100 && e.getAgcSwapCount() < 1; ++b)
+            {
+                e.process (mic.data(), out.data(), 480, lb);
+                juce::Thread::sleep (2);
+            }
+            logMessage ("AGC job failure: halted " + juce::String (halted ? "yes" : "no") + ", AGC swaps after reset " + juce::String (e.getAgcSwapCount()));
+            expect (halted, "the failed AGC job did not halt the engine");
+            expect (! e.hasError());
+            expectEquals (e.getAgcSwapCount(), 1);
+        }
+    }
+
+    static aec::AgcSettings agcFor (aec::AgcPreset p)
+    {
+        const auto& v = aec::agcValuesFor (p);
+        aec::AgcSettings s;
+        s.enabled = true;
+        s.headroomDb = v[0];
+        s.maxGainDb = v[1];
+        s.adaptSpeedDbPerSec = v[2];
+        s.noiseCeilingDbfs = v[3];
+        return s;
+    }
+
+    static float maxAbsFrom (const std::vector<float>& x, size_t from)
+    {
+        float m = 0.0f;
+        for (size_t i = from; i < x.size(); ++i)
+            m = juce::jmax (m, std::abs (x[i]));
+        return m;
+    }
+
+    /** rms (dB) of out[from, to) over the samples whose input (index - latency) was in the speech-like "on" part. */
+    static float onRmsDb (const std::vector<float>& out, size_t from, size_t to, int latency, double sr)
+    {
+        double sumSq = 0.0;
+        size_t count = 0;
+        for (size_t i = from; i < to && i < out.size(); ++i)
+            if (i >= (size_t) latency && aec::test::speechLikeOn (i - (size_t) latency, sr))
+            {
+                sumSq += (double) out[i] * out[i];
+                ++count;
+            }
+        return count > 0 && sumSq > 0.0 ? (float) (10.0 * std::log10 (sumSq / (double) count)) : -200.0f;
     }
 
     /** Polls `done` every millisecond until it holds or `timeoutMs` has passed. */

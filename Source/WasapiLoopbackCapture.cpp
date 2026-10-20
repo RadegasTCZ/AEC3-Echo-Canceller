@@ -250,16 +250,24 @@ std::vector<WasapiLoopbackCapture::DeviceInfo> WasapiLoopbackCapture::enumerateD
 
 void WasapiLoopbackCapture::startCapture()
 {
-    if (isThreadRunning())
+    const juce::ScopedLock sl (lifecycleLock);
+    wantRunning.store (true, std::memory_order_release);
+
+    if (isCaptureThreadRunning())
         return;
 
-    fifo.reset();
+    requestFlush();
     status.store (Status::Connecting, std::memory_order_release);
-    startThread (juce::Thread::Priority::highest);
+    startCaptureThread();
 }
 
 void WasapiLoopbackCapture::stopCapture()
 {
+    // First, before anything else: from here on the watchdog never restarts the thread (spec §8).
+    // Checking status alone is not enough: run()'s error path stores Connecting during its backoff.
+    wantRunning.store (false, std::memory_order_release);
+
+    const juce::ScopedLock sl (lifecycleLock);   // waits out a restart already in progress
     signalThreadShouldExit();
     stopThread (2000); // 2s timeout — don't freeze the DAW
     status.store (Status::Disconnected, std::memory_order_release);
@@ -267,8 +275,29 @@ void WasapiLoopbackCapture::stopCapture()
     capturedChannels.store (0, std::memory_order_release);
 }
 
+int WasapiLoopbackCapture::writeForTesting (const int16_t* src, int numSamples)
+{
+    const int n = juce::jmin (numSamples, fifo.getFreeSpace());
+    if (n <= 0)
+        return 0;
+
+    int start1, size1, start2, size2;
+    fifo.prepareToWrite (n, start1, size1, start2, size2);
+
+    if (size1 > 0) std::memcpy (ringBuffer.data() + start1, src, (size_t) size1 * sizeof (int16_t));
+    if (size2 > 0) std::memcpy (ringBuffer.data() + start2, src + size1, (size_t) size2 * sizeof (int16_t));
+
+    fifo.finishedWrite (size1 + size2);
+    return size1 + size2;
+}
+
 int WasapiLoopbackCapture::readSamples (int16_t* dest, int maxSamples)
 {
+    // Reader-side flush: only the reader moves the read index, so this is SPSC-safe
+    // (fifo.reset() from another thread would race with an in-flight read).
+    if (flushRequested.exchange (false, std::memory_order_acq_rel))
+        fifo.finishedRead (fifo.getNumReady());
+
     int ready = fifo.getNumReady();
     int toRead = juce::jmin (ready, maxSamples);
     if (toRead <= 0)
@@ -490,7 +519,7 @@ bool WasapiLoopbackCapture::initAndCapture()
     status.store (Status::Connected, std::memory_order_release);
 
     // Reset ring buffer so stale data from a previous session isn't used
-    fifo.reset();
+    requestFlush();
 
     bool wasCaptureActive = captureActive.load (std::memory_order_acquire);
 
@@ -513,7 +542,7 @@ bool WasapiLoopbackCapture::initAndCapture()
         // Check captureActive state transitions
         bool active = captureActive.load (std::memory_order_acquire);
         if (! wasCaptureActive && active)
-            fifo.reset(); // flush on resume — safe because we were the only writer and paused
+            requestFlush(); // flush on resume: the reader discards on its next read (we never touch the read index)
         wasCaptureActive = active;
 
         // Drain all available packets
@@ -629,8 +658,17 @@ bool WasapiLoopbackCapture::initAndCapture()
 
 void WasapiLoopbackCapture::checkHealthAndRecover()
 {
-    // Only called from message thread (UI timer)
-    if (isThreadRunning())
+    // Only called from message thread (processor watchdog timer)
+    if (! wantRunning.load (std::memory_order_acquire))
+        return;   // stopped (releaseResources / destructor) or never started: never restart
+
+    // Never block the message thread on a stopCapture() in progress elsewhere: skip this tick instead.
+    // Under the lock wantRunning is re-checked, so a stop that began after the check above wins.
+    const juce::ScopedTryLock sl (lifecycleLock);
+    if (! sl.isLocked() || ! wantRunning.load (std::memory_order_acquire))
+        return;
+
+    if (isCaptureThreadRunning())
     {
         recoveryBackoffMs = 500; // reset backoff while healthy
         return;
@@ -641,14 +679,14 @@ void WasapiLoopbackCapture::checkHealthAndRecover()
         return;
 
     // Exponential backoff on restart attempts
-    auto now = juce::Time::getHighResolutionTicks();
+    auto now = recoveryNowTicks();
     double sinceLastMs = juce::Time::highResolutionTicksToSeconds (now - lastRecoveryAttemptTicks) * 1000.0;
     if (sinceLastMs < recoveryBackoffMs)
         return;
 
     lastRecoveryAttemptTicks = now;
-    fifo.reset();
+    requestFlush();
     status.store (Status::Connecting, std::memory_order_release);
-    startThread (juce::Thread::Priority::highest);
+    startCaptureThread();
     recoveryBackoffMs = std::min (recoveryBackoffMs * 2, kMaxRecoveryBackoffMs);
 }

@@ -10,6 +10,7 @@
       <FILE id="t01a03" name="SanityTests.cpp" compile="1" resource="0" file="SanityTests.cpp"/>
       <FILE id="t01a04" name="WebRtcLibraryTests.cpp" compile="1" resource="0" file="WebRtcLibraryTests.cpp"/>
       <FILE id="t01a05" name="StrengthTests.cpp" compile="1" resource="0" file="StrengthTests.cpp"/>
+      <FILE id="t01a99" name="LevelTests.cpp" compile="1" resource="0" file="LevelTests.cpp"/>
       <FILE id="t01a06" name="StateTests.cpp" compile="1" resource="0" file="StateTests.cpp"/>
       <FILE id="t01a07" name="PresetTests.cpp" compile="1" resource="0" file="PresetTests.cpp"/>
       <FILE id="t01a08" name="ResamplerTests.cpp" compile="1" resource="0" file="ResamplerTests.cpp"/>
@@ -17,6 +18,7 @@
       <FILE id="t01a14" name="UiKitTests.cpp" compile="1" resource="0" file="UiKitTests.cpp"/>
       <FILE id="t01a15" name="UiEditorTests.cpp" compile="1" resource="0" file="UiEditorTests.cpp"/>
       <FILE id="t01a13" name="ProcessorTests.cpp" compile="1" resource="0" file="ProcessorTests.cpp"/>
+      <FILE id="t01a16" name="CaptureTests.cpp" compile="1" resource="0" file="CaptureTests.cpp"/>
       <FILE id="t01a10" name="FakeLoopback.h" compile="0" resource="0" file="FakeLoopback.h"/>
       <FILE id="t01a11" name="AllocCounter.h" compile="0" resource="0" file="AllocCounter.h"/>
       <FILE id="t01a12" name="AllocCounter.cpp" compile="1" resource="0" file="AllocCounter.cpp"/>
@@ -36,11 +38,17 @@
       <FILE id="t01s09h" name="AecMapping.h" compile="0" resource="0" file="../Source/AecMapping.h"/>
       <FILE id="t01s10c" name="Strength.cpp" compile="1" resource="0" file="../Source/Strength.cpp"/>
       <FILE id="t01s10h" name="Strength.h" compile="0" resource="0" file="../Source/Strength.h"/>
+      <FILE id="t01s19c" name="AgcPresets.cpp" compile="1" resource="0" file="../Source/AgcPresets.cpp"/>
+      <FILE id="t01s19h" name="AgcPresets.h" compile="0" resource="0" file="../Source/AgcPresets.h"/>
       <FILE id="t01s11h" name="ParamIds.h" compile="0" resource="0" file="../Source/ParamIds.h"/>
       <FILE id="t01s12c" name="StateMigration.cpp" compile="1" resource="0" file="../Source/StateMigration.cpp"/>
       <FILE id="t01s12h" name="StateMigration.h" compile="0" resource="0" file="../Source/StateMigration.h"/>
       <FILE id="t01s13c" name="Resampler.cpp" compile="1" resource="0" file="../Source/Resampler.cpp"/>
       <FILE id="t01s13h" name="Resampler.h" compile="0" resource="0" file="../Source/Resampler.h"/>
+      <FILE id="t01s17c" name="OutputLimiter.cpp" compile="1" resource="0" file="../Source/OutputLimiter.cpp"/>
+      <FILE id="t01s17h" name="OutputLimiter.h" compile="0" resource="0" file="../Source/OutputLimiter.h"/>
+      <FILE id="t01s18c" name="AgcStage.cpp" compile="1" resource="0" file="../Source/AgcStage.cpp"/>
+      <FILE id="t01s18h" name="AgcStage.h" compile="0" resource="0" file="../Source/AgcStage.h"/>
       <FILE id="t01s14h" name="LoopbackSource.h" compile="0" resource="0" file="../Source/LoopbackSource.h"/>
       <FILE id="t01s15h" name="DelayLine.h" compile="0" resource="0" file="../Source/DelayLine.h"/>
       <FILE id="t01s16h" name="PeakHold.h" compile="0" resource="0" file="../Source/PeakHold.h"/>
@@ -61,8 +69,12 @@
       <FILE id="t01u11c" name="Header.cpp" compile="1" resource="0" file="../Source/UI/Header.cpp"/>
       <FILE id="t01u12" name="EchoBox.h" compile="0" resource="0" file="../Source/UI/EchoBox.h"/>
       <FILE id="t01u12c" name="EchoBox.cpp" compile="1" resource="0" file="../Source/UI/EchoBox.cpp"/>
-      <FILE id="t01u13" name="NoiseBox.h" compile="0" resource="0" file="../Source/UI/NoiseBox.h"/>
-      <FILE id="t01u13c" name="NoiseBox.cpp" compile="1" resource="0" file="../Source/UI/NoiseBox.cpp"/>
+      <FILE id="t01uV1h" name="VoiceBox.h" compile="0" resource="0" file="../Source/UI/VoiceBox.h"/>
+      <FILE id="t01uV1c" name="VoiceBox.cpp" compile="1" resource="0" file="../Source/UI/VoiceBox.cpp"/>
+      <FILE id="t01uL0h" name="AgcPresetSelector.h" compile="0" resource="0" file="../Source/UI/AgcPresetSelector.h"/>
+      <FILE id="t01uL0c" name="AgcPresetSelector.cpp" compile="1" resource="0" file="../Source/UI/AgcPresetSelector.cpp"/>
+      <FILE id="t01uL1h" name="ReductionMeter.h" compile="0" resource="0" file="../Source/UI/ReductionMeter.h"/>
+      <FILE id="t01uL1c" name="ReductionMeter.cpp" compile="1" resource="0" file="../Source/UI/ReductionMeter.cpp"/>
       <FILE id="t01uXComph" name="CompactSlider.h" compile="0" resource="0" file="../Source/UI/CompactSlider.h"/>
       <FILE id="t01uXCompcpp" name="CompactSlider.cpp" compile="1" resource="0" file="../Source/UI/CompactSlider.cpp"/>
       <FILE id="t01uXOtheh" name="OtherTab.h" compile="0" resource="0" file="../Source/UI/OtherTab.h"/>
@@ -106,7 +118,7 @@
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"/>
   <EXPORTFORMATS>
     <VS2026 targetFolder="Builds/VisualStudio2026"
-            extraDefs="WEBRTC_WIN&#10;NOMINMAX&#10;WIN32_LEAN_AND_MEAN&#10;RTC_DISABLE_METRICS&#10;WEBRTC_APM_DEBUG_DUMP=0"
+            extraDefs="WEBRTC_WIN&#10;NOMINMAX&#10;WIN32_LEAN_AND_MEAN&#10;RTC_DISABLE_METRICS&#10;WEBRTC_APM_DEBUG_DUMP=0&#10;JUCE_MODAL_LOOPS_PERMITTED=1"
             cppLanguageStandard="20"
             extraCompilerFlags="/I&quot;..\..\..\thirdparty\AEC3&quot; /I&quot;..\..\..\thirdparty\speexdsp&quot; /I&quot;..\..\..&quot; /FI&quot;JuceLibraryCode\JucePluginDefines.h&quot; /utf-8">
       <CONFIGURATIONS>

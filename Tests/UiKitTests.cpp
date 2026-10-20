@@ -3,6 +3,7 @@
 #include "../Source/UI/HelpText.h"
 #include "../Source/UI/MeterBallistics.h"
 #include "../Source/UI/MeterView.h"
+#include "../Source/UI/ReductionMeter.h"
 #include "../Source/UI/SegmentedSelector.h"
 #include "../Source/UI/Theme.h"
 #include <cmath>
@@ -371,6 +372,31 @@ public:
             expectEquals (mv.numberText (2), juce::String ("-6.0"));
         }
 
+        beginTest ("ReductionMeter: 0 dB is an empty bar and 0.0; 6 dB fills a quarter and reads -6.0");
+        {
+            ReductionHold hold;
+            ui::ReductionMeter rm (hold);
+            rm.setSize (178, ui::ReductionMeter::kHeight);
+            rm.tick (frame);
+            expectEquals (rm.getBarPixels(), 0);
+            expect (rm.numberText() == "0.0" || rm.numberText() == "-0.0");
+            const int settled = rm.getRepaintRequestCount();
+            rm.tick (frame);
+            expectEquals (rm.getRepaintRequestCount(), settled);
+
+            hold.push (6.0f);
+            rm.tick (frame);
+            expect (rm.getBarPixels() > 0);
+            expectEquals (rm.numberText(), juce::String ("-6.0"));
+            const int barW = 178 - (ui::ReductionMeter::kLabelWidth + ui::ReductionMeter::kGap) - ui::ReductionMeter::kGap
+                             - ui::ReductionMeter::kNumberWidth;
+            expectEquals (rm.getBarPixels(), juce::roundToInt (barW * 6.0f / 24.0f));
+            expect (rm.getRepaintRequestCount() > settled);
+
+            rm.tick (1.0f);                         // falls 12 dB/s: gone after 1 s
+            expectEquals (rm.getBarPixels(), 0);
+        }
+
         beginTest ("MeterView: silence from the start never repaints");
         {
             PeakHold in, out;
@@ -430,7 +456,11 @@ public:
             expect (help::find ("nsLevel") != nullptr);
             expect (help::find ("monitorNoise") != nullptr);
             expect (help::find ("nope") == nullptr);
-            expectEquals ((int) help::all().size(), 20);
+            expect (help::find ("agcEnabled") != nullptr);
+            expect (help::find ("limiterEnabled") != nullptr);
+            for (auto* id : { "agcHeadroom", "agcMaxGain", "agcAdaptSpeed", "agcNoiseCeiling" })
+                expect (help::find (id) != nullptr, juce::String ("missing help for ") + id);
+            expectEquals ((int) help::all().size(), 26);
         }
     }
 };

@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "ParamIds.h"
 #include "StateMigration.h"
+#include "AgcPresets.h"
 
 /** nsLevel choice index from its raw value; a non-finite value (NaN automation) is the default 12 dB. */
 static int nsLevelIndex (float raw)
@@ -72,6 +73,24 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { aec::ids::monitorNoise, 1 }, "Hear Removed", false));
 
+    // Level: auto gain (AGC2 adaptive digital) and output limiter (v6.1)
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { aec::ids::agcEnabled, 1 }, "Auto Gain", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { aec::ids::agcHeadroom, 1 }, "AGC Headroom",
+        juce::NormalisableRange<float> (0.0f, 20.0f, 1.0f), 5.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { aec::ids::agcMaxGain, 1 }, "AGC Max Gain",
+        juce::NormalisableRange<float> (1.0f, 50.0f, 1.0f), 30.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { aec::ids::agcAdaptSpeed, 1 }, "AGC Adapt Speed",
+        juce::NormalisableRange<float> (1.0f, 30.0f, 1.0f), 6.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { aec::ids::agcNoiseCeiling, 1 }, "AGC Noise Ceiling",
+        juce::NormalisableRange<float> (-80.0f, -20.0f, 1.0f), -50.0f));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { aec::ids::limiterEnabled, 1 }, "Output Limiter", true));
+
     return layout;
 }
 
@@ -121,11 +140,24 @@ AEC3EchoCancellerAudioProcessor::AEC3EchoCancellerAudioProcessor()
     // Noise suppression
     nsLevelParam      = parameters.getRawParameterValue (aec::ids::nsLevel);
     monitorNoiseParam = parameters.getRawParameterValue (aec::ids::monitorNoise);
+
+    // Level
+    limiterEnabledParam = parameters.getRawParameterValue (aec::ids::limiterEnabled);
+
+    startTimer (250);   // capture watchdog: restarts a dead capture thread even with no editor open
 }
 
 AEC3EchoCancellerAudioProcessor::~AEC3EchoCancellerAudioProcessor()
 {
+    // Message thread (see the header): stopTimer() then cannot overlap a watchdog callback. stopCapture()
+    // also blocks any later restart on its own (wantRunning).
+    stopTimer();
     loopbackCapture.stopCapture();
+}
+
+void AEC3EchoCancellerAudioProcessor::timerCallback()
+{
+    loopbackCapture.checkHealthAndRecover();   // restart the capture thread if it died
 }
 
 const juce::String AEC3EchoCancellerAudioProcessor::getName() const
@@ -194,6 +226,8 @@ void AEC3EchoCancellerAudioProcessor::changeProgramName (int index, const juce::
 void AEC3EchoCancellerAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     echoCancellerEngine.setNoiseLevel (nsLevelIndex (nsLevelParam->load()));   // first suppressor at the saved level
+    echoCancellerEngine.setAgc (aec::readAgcSettings (parameters));            // first AGC stage from the saved values
+    echoCancellerEngine.setLimiterEnabled (limiterEnabledParam->load() >= 0.5f);
     echoCancellerEngine.prepare (sampleRate, samplesPerBlock, loopbackCapture.getCapturedSampleRate());
 
     preparedBlock = juce::jmax (1, samplesPerBlock);
@@ -302,6 +336,10 @@ void AEC3EchoCancellerAudioProcessor::processInternal (juce::AudioBuffer<float>&
 
     echoCancellerEngine.setNoiseLevel (nsLevelIndex (nsLevelParam->load()));
     echoCancellerEngine.setMonitorNoiseResidual (monitorNoiseParam->load() >= 0.5f);
+
+    // Auto gain (sanitised, debounced, built by the worker) and the output limiter
+    echoCancellerEngine.setAgc (aec::readAgcSettings (parameters));
+    echoCancellerEngine.setLimiterEnabled (limiterEnabledParam->load() >= 0.5f);
 
     // A halted or unusable engine passes the mic through undelayed: treat it as bypass, and on the
     // fault edge snap to the (correctly delayed) dry signal since the wet path is already invalid.

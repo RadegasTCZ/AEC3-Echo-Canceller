@@ -2,7 +2,6 @@
 #include "Theme.h"
 #include "../ParamIds.h"
 #include "../PresetIO.h"
-#include "../Strength.h"
 #include <cmath>
 
 namespace aec::ui
@@ -13,16 +12,6 @@ namespace
     constexpr float kSpectrumMinDb = -100.0f, kSpectrumMaxDb = -10.0f;
 
     juce::String withEllipsis (const char* word)   { return juce::String (word) + juce::String::fromUTF8 ("\xe2\x80\xa6"); }
-
-    void setParam (juce::AudioProcessorValueTreeState& apvts, const char* id, float value)
-    {
-        if (auto* prm = apvts.getParameter (id))
-        {
-            prm->beginChangeGesture();
-            prm->setValueNotifyingHost (prm->convertTo0to1 (value));
-            prm->endChangeGesture();
-        }
-    }
 }
 
 OtherTab::OtherTab (AEC3EchoCancellerAudioProcessor& p)
@@ -103,16 +92,14 @@ void OtherTab::loadClicked()
 
 void OtherTab::factoryReset()
 {
-    auto& apvts = processor.getAPVTS();
-    aec::applyStrength (apvts, aec::Strength::Normal);
-    setParam (apvts, aec::ids::latencyComp, 0.0f);
-    setParam (apvts, aec::ids::roomReverb, 13.0f);
-    setParam (apvts, aec::ids::nsLevel, 2.0f);                // choice index 2 = "12" dB
-    setParam (apvts, aec::ids::boundedErl, 0.0f);
-    setParam (apvts, aec::ids::clockDrift, 0.0f);
-    setParam (apvts, aec::ids::monitorCapture, 0.0f);
-    setParam (apvts, aec::ids::monitorNoise, 0.0f);
-    setParam (apvts, aec::ids::aecEnabled, 1.0f);
+    // Every parameter back to its layout default: Normal strength, Delay 0, Room 13, Noise 12 dB,
+    // monitors off, On, auto gain off with the Normal values, limiter on (one change gesture each)
+    for (auto* prm : processor.getParameters())
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (prm->getDefaultValue());
+        prm->endChangeGesture();
+    }
 
     processor.getLoopbackCapture().setDeviceId ("");
     if (onDeviceReset)

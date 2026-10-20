@@ -1,19 +1,21 @@
 # AEC3 Echo Canceller
 
-**Version 6.0.0**
+**Version 6.1.0**
 
 A VST3/Standalone plugin for real-time acoustic echo cancellation using Google's WebRTC AEC3 engine with WASAPI loopback capture as the far-end reference signal.
 
 ## Features
 - Real-time echo cancellation powered by WebRTC AEC3, followed by the WebRTC noise suppressor (default 12 dB)
+- Auto gain (WebRTC AGC2 adaptive digital): Off / Gentle / Normal / Strong, tunable under Advanced > Level
+- Output limiter with a -1 dBFS ceiling (on by default)
 - WASAPI loopback capture of a reference device as the far-end signal (captures system audio output)
-- Compact fixed-size window (440x236) with a simple main view and an Advanced view
+- Compact fixed-size window (440x332) with a simple main view and an Advanced view
 - Three echo strengths (Gentle / Normal / Strong) plus a Custom state when you tune the Advanced sliders
 - 14 tuning sliders for normal and double-talk modes, plus Bounded echo level, Clock drift and Hear reference switches (Advanced)
 - Noise removal: Off / 6 / 12 / 18 / 21 dB
 - User presets (Save/Load .ini) and Factory reset
-- Reference device picker with automatic device change detection and auto-reconnect
-- Input, reference and output meters, and a reference spectrum analyzer
+- Reference device picker with automatic device change detection and auto-reconnect (also while the plugin window is closed)
+- Input, reference and output meters, a limiter gain-reduction meter, and a reference spectrum analyzer
 - Delay compensation (0-200 ms) for wireless mics / ASIO routing
 - "Hear reference" and "Hear removed" monitoring for checking what the plugin is working with
 - Works at any host sample rate (SpeexDSP resampling to the 48 kHz processing rate)
@@ -24,18 +26,29 @@ A VST3/Standalone plugin for real-time acoustic echo cancellation using Google's
 ### Main view
 - **Header:** title, speaker-icon reference device picker, **Advanced** button, and the **On** pill (enable/bypass).
 - **1 - ECHO box:** strength (Gentle / Normal / Strong), **Delay** (0-200 ms), **Room** (13-40), IN and REF meters, **Hear reference**, and a connection dot with the reference sample rate.
-- **2 - NOISE box:** noise removal (Off / 6 / 12 / 18 / 21 dB), the OUT meter, and **Hear removed**.
+- **2 - VOICE box:** everything after the echo canceller. Left: noise suppression (Off / 6 / 12 / 18 / 21 dB) and **Auto gain** (Off / Gentle / Normal / Strong). Right: the OUT meter, the LIM meter (limiter gain reduction), **Hear removed**, and the **Limiter** toggle (-1 dBFS ceiling).
 
 ### Advanced (same window)
 - **Echo** and **Double-talk** tabs: compact sliders. The tick on each slider marks Normal, the WebRTC default. Moving any slider switches the strength to **Custom**. A help strip explains the slider under the cursor.
+- **Level** tab: the auto gain presets plus **Custom**, and four sliders: **Headroom** (how far below full scale the voice is kept, 0-20 dB), **Max gain** (1-50 dB), **Adapt speed** (1-30 dB/s) and **Noise ceiling** (-80 to -20 dBFS; quieter sounds are treated as noise and not boosted). Moving a slider switches the preset to **Custom**.
 - **Other** tab: Bounded echo level, Clock drift, Hear reference, Save/Load preset, Factory reset, the reference spectrum, and a status line (Connected / Connecting / Disconnected / Stalled / Error / AEC3 Error).
 
 ## Processing and Latency
-Signal chain: host input -> (resample to 48 kHz if needed) -> WebRTC AEC3 -> WebRTC noise suppressor -> (resample back) -> host output. The noise suppressor is the WebRTC revision `b58dcf8fec` (2026-10-02), default 12 dB. SpeexDSP resampler (quality 5) is used for hosts and reference devices that are not 48 kHz.
+Signal chain: host input -> (resample to 48 kHz if needed) -> WebRTC AEC3 -> WebRTC noise suppressor -> auto gain (AGC2) -> output limiter -> (resample back) -> host output. The auto gain works on the voice only: **Hear reference** and **Hear removed** bypass it. The limiter is last, after the monitor selection, so nothing the plugin outputs exceeds -1 dBFS while it is on. Power off (the **On** pill) and host bypass are a true pass-through: no auto gain and no limiter. Auto gain and limiter add no latency. The noise suppressor is the WebRTC revision `b58dcf8fec` (2026-10-02), default 12 dB. SpeexDSP resampler (quality 5) is used for hosts and reference devices that are not 48 kHz.
 
 **Reported latency is a firm 30 ms at every host sample rate from 16 kHz up, and in every mode, including bypass** (1440 samples at 48 kHz, 1323 at 44.1 kHz, 2880 at 96 kHz). Below 16 kHz the resampler adds enough delay that the pipeline needs slightly more than 30 ms, so the plugin reports that true figure instead. The host therefore sees the same latency whether the plugin is on or bypassed, so toggling it does not shift the audio.
 
 Why 30 ms: the natural pipeline delay at 48 kHz is 1198 samples (about 25 ms) = 480-sample frame buffering + 46 band-split + 384 AEC3 block framing + 288 noise suppressor. The remainder up to 30 ms is padding that keeps the figure fixed. A 20 ms target (the original ask) is physically impossible with this pipeline.
+
+## What's new in 6.1.0
+- **Auto gain** (WebRTC AGC2 adaptive digital): keeps your voice at an even level. Gentle / Normal / Strong on the main view, four sliders under Advanced > Level. Changing a preset while auto gain is on continues from the current gain instead of starting over.
+- **Output limiter** at -1 dBFS, on by default, with a LIM gain-reduction meter. With auto gain on and the limiter off, a sudden loud sound can clip.
+- The NOISE box became the **2 - VOICE** box: noise suppression, auto gain, the OUT and LIM meters, Hear removed and Limiter in one place. The ECHO box is a little taller. The window is now 440x332.
+- The reference capture recovers on its own after a device or driver failure, even while the plugin window is closed.
+- Factory reset also resets auto gain (off, Normal values) and the limiter (on).
+
+## Upgrade Notes (from v6.0.0)
+- 6.0 projects and presets load with **Auto gain off** and the **limiter on**. The limiter is transparent except on peaks above -1 dBFS, so these sessions sound the same unless they were hitting full scale.
 
 ## What's new in 6.0.0
 - Simpler window in the style of the Noise Suppression plugin: a main view with ECHO and NOISE boxes, everything else under Advanced.
@@ -85,7 +98,7 @@ Exit code 0 means all tests passed. Run Debug the same way with `Configuration=D
 The recipe for the pre-built libraries (CMake + Ninja, the exact WebRTC and Abseil revisions, and the small stub sources) is in [`tools/aec3-build/`](tools/aec3-build/README.md).
 
 ## Credits & Licenses
-- This plugin uses [WebRTC AEC3](https://webrtc.googlesource.com/src/) © The WebRTC project authors (BSD-3-Clause).
+- This plugin uses [WebRTC AEC3](https://webrtc.googlesource.com/src/), the noise suppressor and AGC2 © The WebRTC project authors (BSD-3-Clause), including the RNNoise weights (BSD-3-Clause) and PFFFT (FFTPACK license) used by the AGC2 voice activity detector.
 - [Abseil](https://github.com/abseil/abseil-cpp) © The Abseil Authors (Apache-2.0).
 - [SpeexDSP](https://gitlab.xiph.org/xiph/speexdsp) resampler © Xiph.Org Foundation (BSD-3-Clause).
 - Built with [JUCE 9](https://juce.com), used under the AGPLv3.

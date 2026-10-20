@@ -79,6 +79,53 @@ public:
             f.deleteFile();
         }
 
+        beginTest ("v6.1 round trip includes the Level section");
+        {
+            AEC3EchoCancellerAudioProcessor a, b;
+            auto& pa = a.getAPVTS();
+            auto& pb = b.getAPVTS();
+            setReal (pa, "agcEnabled", 1.0f);
+            setReal (pa, "agcHeadroom", 9.0f);
+            setReal (pa, "agcMaxGain", 42.0f);
+            setReal (pa, "agcAdaptSpeed", 17.0f);
+            setReal (pa, "agcNoiseCeiling", -33.0f);
+            setReal (pa, "limiterEnabled", 0.0f);
+
+            auto f = tempPreset ("level");
+            juce::String err;
+            expect (PresetIO::savePreset (f, pa, err), err);
+            const auto text = f.loadFileAsString();
+            expect (text.contains ("[Level]"), "Level section written");
+            expect (text.indexOf ("[Level]") > text.indexOf ("[System]"), "Level after System");
+            expect (text.contains ("agcEnabled=true") && text.contains ("limiterEnabled=false"));
+            expect (PresetIO::loadPreset (f, pb, err), err);
+            expectEquals (realValue (pb, "agcEnabled"), 1.0f);
+            expectEquals (realValue (pb, "agcHeadroom"), 9.0f);
+            expectEquals (realValue (pb, "agcMaxGain"), 42.0f);
+            expectEquals (realValue (pb, "agcAdaptSpeed"), 17.0f);
+            expectEquals (realValue (pb, "agcNoiseCeiling"), -33.0f);
+            expectEquals (realValue (pb, "limiterEnabled"), 0.0f);
+            f.deleteFile();
+        }
+
+        beginTest ("v6.0 file without Level section: AGC off, limiter on");
+        {
+            AEC3EchoCancellerAudioProcessor p;
+            auto& apvts = p.getAPVTS();
+            setReal (apvts, "agcEnabled", 1.0f);
+            setReal (apvts, "limiterEnabled", 0.0f);
+            setReal (apvts, "agcMaxGain", 50.0f);
+
+            auto f = tempPreset ("v60");
+            f.replaceWithText (v5File);
+            juce::String err;
+            expect (PresetIO::loadPreset (f, apvts, err), err);
+            expectEquals (realValue (apvts, "agcEnabled"), 0.0f);
+            expectEquals (realValue (apvts, "limiterEnabled"), 1.0f);
+            expectEquals (realValue (apvts, "agcMaxGain"), 30.0f);
+            f.deleteFile();
+        }
+
         beginTest ("v5 file without nsLevel loads with nsLevel 12 dB");
         {
             AEC3EchoCancellerAudioProcessor p;

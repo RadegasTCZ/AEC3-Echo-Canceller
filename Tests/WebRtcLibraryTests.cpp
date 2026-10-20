@@ -7,7 +7,12 @@
 #include "api/audio/echo_canceller3_config.h"
 #include "api/audio/echo_canceller3_factory.h"
 #include "api/environment/environment_factory.h"
+#include "modules/audio_processing/agc2/adaptive_digital_gain_controller.h"
+#include "modules/audio_processing/agc2/cpu_features.h"
+#include "modules/audio_processing/agc2/limiter.h"
+#include "modules/audio_processing/agc2/vad_wrapper.h"
 #include "modules/audio_processing/audio_buffer.h"
+#include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "modules/audio_processing/ns/noise_suppressor.h"
 #include "modules/audio_processing/ns/ns_config.h"
 
@@ -117,6 +122,51 @@ namespace
                                 cfg.suppressor.nearend_tuning.mask_lf.enr_suppress);
                 expectLessThan (cfg.suppressor.nearend_tuning.mask_hf.enr_transparent,
                                 cfg.suppressor.nearend_tuning.mask_hf.enr_suppress);
+            }
+
+            beginTest ("AGC2 Limiter keeps a +6 dBFS sine within full scale");
+            {
+                constexpr float kFullScale = 32768.0f;
+                webrtc::ApmDataDumper dumper (0);
+                webrtc::Limiter lim (&dumper, (size_t) kFrame, "Agc2");
+
+                std::vector<float> frame ((size_t) kFrame);
+                float maxAbs = 0.0f;
+                bool withinScale = true;
+                double phase = 0.0;
+                const double inc = 2.0 * juce::MathConstants<double>::pi * 1000.0 / kRate;
+
+                for (int f = 0; f < 200; ++f)
+                {
+                    for (auto& x : frame)
+                    {
+                        x = (float) (2.0 * kFullScale * std::sin (phase));
+                        phase += inc;
+                    }
+                    lim.Process (webrtc::DeinterleavedView<float> (frame.data(), (size_t) kFrame, 1));
+                    if (f > 10)
+                        for (const float x : frame)
+                        {
+                            withinScale = withinScale && std::abs (x) <= kFullScale;
+                            maxAbs = std::max (maxAbs, std::abs (x));
+                        }
+                }
+                expect (withinScale);
+                expectGreaterThan (maxAbs, 0.5f * kFullScale);
+            }
+
+            beginTest ("AGC2 VAD wrapper builds and returns a probability in [0,1]");
+            {
+                webrtc::VoiceActivityDetectorWrapper vad (1500, webrtc::GetAvailableCpuFeatures(), kRate);
+                const auto noise = aec::test::whiteNoise (100 * kFrame, 0.1f * 32768.0f, 99u);
+                bool inRange = true;
+                for (int f = 0; f < 100; ++f)
+                {
+                    const float p = vad.Analyze (webrtc::DeinterleavedView<const float> (
+                        noise.data() + (size_t) f * kFrame, (size_t) kFrame, 1));
+                    inRange = inRange && p >= 0.0f && p <= 1.0f;
+                }
+                expect (inRange);
             }
         }
     };

@@ -1,6 +1,8 @@
 #include <JuceHeader.h>
 #include "../Source/PluginProcessor.h"
 #include "../Source/ParamIds.h"
+#include "../Source/AgcPresets.h"
+#include "../Source/OutputLimiter.h"
 #include "TestSignals.h"
 
 namespace
@@ -80,8 +82,56 @@ class ProcessorTests final : public juce::UnitTest
 public:
     ProcessorTests() : juce::UnitTest ("Processor", "Processor") {}
 
+    // Separate function: keeps these processors off runTest's stack frame.
+    void runLevelWiringTests()
+    {
+        beginTest ("APVTS auto gain Strong raises a quiet speech-like signal through processBlock");
+        {
+            const auto in = aec::test::speechLikeSine (12 * 48000, 1000.0f, -40.0f, 48000.0);
+            auto lastSecondDb = [&] (bool agc)
+            {
+                Proc p;
+                setRaw (p, aec::ids::nsLevel, 0.0f);   // NS Off
+                if (agc)
+                    aec::applyAgcPreset (p.getAPVTS(), aec::AgcPreset::Strong);   // also switches agcEnabled on
+                p.getEchoCancellerEngine().setAgcSpeechProbabilityForTesting (1.0f);
+                prepare (p, 48000.0, 480);
+                const auto out = run (p, in, 480);
+                return aec::test::rmsDb (out.data() + out.size() - 48000, 48000);
+            };
+
+            const float off = lastSecondDb (false), on = lastSecondDb (true);
+            logMessage ("processor AGC Strong: last-second rms " + juce::String (off, 1) + " -> " + juce::String (on, 1) + " dBFS");
+            expectGreaterThan (on - off, 10.0f);
+        }
+
+        beginTest ("APVTS limiter keeps a +6 dBFS input at or below -1 dBFS through processBlock");
+        {
+            const auto in = aec::test::sine (3 * 48000, 997.0f, 2.0f, 48000.0);
+            auto peakAfterStart = [&] (bool limiter)
+            {
+                Proc p;
+                setRaw (p, aec::ids::nsLevel, 0.0f);
+                setRaw (p, aec::ids::limiterEnabled, limiter ? 1.0f : 0.0f);
+                prepare (p, 48000.0, 480);
+                const auto out = run (p, in, 480);
+                float peak = 0.0f;
+                for (size_t i = 48000; i < out.size(); ++i)   // past the start-up (dry, unlimited) priming
+                    peak = juce::jmax (peak, std::abs (out[i]));
+                return peak;
+            };
+
+            const float on = peakAfterStart (true), off = peakAfterStart (false);
+            logMessage ("processor limiter: max |out| on " + juce::String (on, 6) + ", off " + juce::String (off, 6));
+            expectLessOrEqual (on, aec::OutputLimiter::kCeilingLinear + 1.0e-6f);
+            expectGreaterThan (off, aec::OutputLimiter::kCeilingLinear, "the input never reached the ceiling");
+        }
+    }
+
     void runTest() override
     {
+        runLevelWiringTests();
+
         beginTest ("reported latency is 30 ms");
         {
             Proc p;
@@ -97,6 +147,22 @@ public:
 
             const auto in = aec::test::whiteNoise (48000, 0.3f, 11);
             const auto out = run (p, in, 480);
+            expect (delayedExactly (in, out, 1440));
+        }
+
+        beginTest ("power off is a true pass-through with the limiter on");
+        {
+            Proc p;
+            setRaw (p, "aecEnabled", 0.0f);
+            expect (raw (p, aec::ids::limiterEnabled) >= 0.5f, "the limiter is not on by default");
+            prepare (p, 48000.0, 480);
+
+            const auto in = aec::test::whiteNoise (48000, 2.0f, 22);   // +6 dBFS peaks
+            const auto out = run (p, in, 480);
+            float peak = 0.0f;
+            for (auto x : out)
+                peak = juce::jmax (peak, std::abs (x));
+            expect (peak > 1.0f, "values above full scale were not preserved");
             expect (delayedExactly (in, out, 1440));
         }
 

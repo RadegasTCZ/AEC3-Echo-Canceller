@@ -119,8 +119,8 @@ Header::Header (AEC3EchoCancellerAudioProcessor& p)
     };
     addAndMakeVisible (advancedButton);
 
-    static const char* const tabNames[] = { "Echo", "Double-talk", "Other" };
-    for (int i = 0; i < 3; ++i)
+    static const char* const tabNames[] = { "Echo", "Double-talk", "Level", "Other" };
+    for (int i = 0; i < 4; ++i)
     {
         auto& tab = tabButtons[i];
         tab.setButtonText (tabNames[i]);
@@ -151,16 +151,18 @@ Header::Header (AEC3EchoCancellerAudioProcessor& p)
 void Header::setAdvancedShown (bool open)
 {
     advancedButton.setToggleState (open, juce::dontSendNotification);
+    advancedShown = open;
     deviceCombo.setVisible (! open);
     advancedButton.setVisible (! open);
     for (auto& tab : tabButtons)
         tab.setVisible (open);
     closeButton.setVisible (open);
+    repaint();                                              // the title is narrower while the tabs are shown
 }
 
 void Header::setTab (int tab)
 {
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 4; ++i)
         tabButtons[i].setToggleState (i == tab, juce::dontSendNotification);
 }
 
@@ -190,16 +192,18 @@ void Header::resized()
     advancedButton.setBounds (274, 10, 74, 24);
     onButton.setBounds (356, 8, 76, 28);
     // tab pills and close button from layout-v2.html (shown in place of the picker and the Advanced button)
-    tabButtons[0].setBounds (148, 12, 46, 20);
-    tabButtons[1].setBounds (198, 12, 72, 20);
-    tabButtons[2].setBounds (274, 12, 44, 20);
-    closeButton.setBounds (322, 10, 28, 24);
+    // four tabs plus the close button must fit between the (narrower) title and the On pill
+    tabButtons[0].setBounds (104, 12, 42, 20);
+    tabButtons[1].setBounds (149, 12, 70, 20);
+    tabButtons[2].setBounds (222, 12, 42, 20);
+    tabButtons[3].setBounds (267, 12, 44, 20);
+    closeButton.setBounds (318, 10, 28, 24);
 }
 
 void Header::paint (juce::Graphics& g)
 {
     g.setColour (colours::text);
     g.setFont (spacedBoldFont (11.0f, 0.08f));
-    g.drawFittedText ("ECHO CANCELLER", 8, 8, 140, 28, juce::Justification::centredLeft, 1, 0.8f);
+    g.drawFittedText ("ECHO CANCELLER", 8, 8, advancedShown ? 92 : 140, 28, juce::Justification::centredLeft, 1, 0.8f);
 }
 } // namespace aec::ui

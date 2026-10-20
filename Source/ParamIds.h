@@ -28,4 +28,11 @@ namespace aec::ids
 
     inline constexpr const char* nsLevel          = "nsLevel";
     inline constexpr const char* monitorNoise     = "monitorNoise";
+
+    inline constexpr const char* agcEnabled       = "agcEnabled";
+    inline constexpr const char* agcHeadroom      = "agcHeadroom";
+    inline constexpr const char* agcMaxGain       = "agcMaxGain";
+    inline constexpr const char* agcAdaptSpeed    = "agcAdaptSpeed";
+    inline constexpr const char* agcNoiseCeiling  = "agcNoiseCeiling";
+    inline constexpr const char* limiterEnabled   = "limiterEnabled";
 }

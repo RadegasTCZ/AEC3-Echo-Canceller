@@ -67,14 +67,15 @@ EchoBox::EchoBox (AEC3EchoCancellerAudioProcessor& p)
     addAndMakeVisible (hearReference);
     hearAttachment = std::make_unique<Apvts::ButtonAttachment> (apvts, aec::ids::monitorCapture, hearReference);
 
-    // positions from layout-v3.html; the box has a 1 px border, so child coordinates are +1
-    strength.setTopLeftPosition (11, 25);
-    delayKnob.setBounds (85, 7, kKnobW, kKnobH);
-    roomKnob.setBounds (155, 7, kKnobW, kKnobH);
-    delayCaption.setBounds (85, 71, kKnobW, 12);
-    roomCaption.setBounds (155, 71, kKnobW, 12);
-    meters.setBounds (237, 13, 178, MeterView::kHeight (2));
-    hearReference.setBounds (237, 57, 124, 20);   // ends before the connection dot
+    // positions from layout-v3.html, 4 px lower in the 96 px box (8 px under the Strong pill);
+    // the box has a 1 px border, so child coordinates are +1
+    strength.setTopLeftPosition (11, 28);
+    delayKnob.setBounds (85, 11, kKnobW, kKnobH);
+    roomKnob.setBounds (155, 11, kKnobW, kKnobH);
+    delayCaption.setBounds (85, 75, kKnobW, 12);
+    roomCaption.setBounds (155, 75, kKnobW, 12);
+    meters.setBounds (237, 17, 178, MeterView::kHeight (2));
+    hearReference.setBounds (237, 61, 124, 20);   // ends before the connection dot
 }
 
 void EchoBox::setConnection (LinkState state, int sampleRate)
@@ -104,7 +105,7 @@ void EchoBox::paint (juce::Graphics& g)
     g.fillRoundedRectangle (box, 5.0f);
     g.setColour (colours::line);
     g.drawRoundedRectangle (box, 5.0f, 1.0f);
-    g.fillRect (227, 9, 1, 70);                       // separator
+    g.fillRect (227, 9, 1, kHeight - 18);             // separator
 
     g.setColour (colours::dim);
     g.setFont (spacedBoldFont (10.0f, 0.08f));

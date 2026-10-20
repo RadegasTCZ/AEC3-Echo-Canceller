@@ -30,6 +30,29 @@ namespace aec::test
         return v;
     }
 
+    /** True in the "on" part of the speech-like gating: 10 ms frame index % 40 < 30 (300 ms on, 100 ms gap). */
+    inline bool speechLikeOn (size_t i, double sr)
+    {
+        const auto frame = (long long) ((double) i * 100.0 / sr);
+        return frame % 40 < 30;
+    }
+
+    /** Speech-like gated sine: 300 ms at rmsDbfs, 100 ms gap at rmsDbfs - gapDb, repeating. A continuous sine
+        looks like stationary noise to AGC2's noise-floor estimator, which then forbids any gain above the
+        noise ceiling; tests that expect the AGC to raise a signal use this instead. */
+    inline std::vector<float> speechLikeSine (int n, float hz, float rmsDbfs, double sr, float gapDb = 35.0f)
+    {
+        const float amp = std::pow (10.0f, rmsDbfs / 20.0f) * 1.41421356f;
+        const float g = std::pow (10.0f, -gapDb / 20.0f);
+        auto v = sine (n, hz, amp, sr);
+
+        for (size_t i = 0; i < v.size(); ++i)
+            if (! speechLikeOn (i, sr))
+                v[i] *= g;
+
+        return v;
+    }
+
     /** The lag in [0, maxLag] maximising sum_i a[i] * b[i + lag] (first maximum wins). */
     inline int crossCorrelationLag (const std::vector<float>& a, const std::vector<float>& b, int maxLag)
     {

@@ -5,7 +5,7 @@
 namespace aec::ui
 {
 /** Top bar (440 x 44): title, reference-device picker with a speaker glyph, Advanced toggle, On pill.
-    While Advanced is open the picker and the Advanced button give way to the tab pills Echo / Double-talk / Other
+    While Advanced is open the picker and the Advanced button give way to the tab pills Echo / Double-talk / Level / Other
     and a close (X) button. */
 class Header final : public juce::Component
 {
@@ -18,7 +18,7 @@ public:
     /** Called with the new state when the user presses Advanced. */
     std::function<void (bool open)> onAdvancedToggled;
 
-    /** Called with 0 (Echo), 1 (Double-talk) or 2 (Other) when the user presses a tab pill. */
+    /** Called with 0 (Echo), 1 (Double-talk), 2 (Level) or 3 (Other) when the user presses a tab pill. */
     std::function<void (int tab)> onTabSelected;
 
     /** Silently moves the Advanced button to `open` and swaps the picker / Advanced button for the tabs / close button. */
@@ -83,7 +83,8 @@ private:
     AEC3EchoCancellerAudioProcessor& processor;
     DeviceCombo deviceCombo;
     AdvancedButton advancedButton;
-    TabPill tabButtons[3];
+    TabPill tabButtons[4];
+    bool advancedShown = false;
     CloseButton closeButton;
     OnPill onButton;
     std::unique_ptr<ButtonAttachment> onAttachment;

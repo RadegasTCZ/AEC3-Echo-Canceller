@@ -62,6 +62,19 @@ this code.
 Wilco Dijkstra, 1996, and placed in the public domain by its author (see the
 `LICENSE` file in that WebRTC directory).
 
+**Adaptive digital gain control 2 (AGC2) and its limiter** (`modules/audio_processing/agc2/`):
+WebRTC's own code, under the WebRTC BSD-3-Clause licence above, including the RNN voice
+activity detector (`agc2/rnn_vad/`).
+
+**RNNoise weights** (Chromium `third_party/rnnoise`, revision `6eabe54fa1`): the trained network
+weights the AGC2 voice activity detector uses. BSD-3-Clause, Copyright (c) 2017 Mozilla,
+2007-2017 Jean-Marc Valin, 2005-2017 Xiph.Org Foundation, 2003-2004 Mark Borgerding. Full text in
+[`LICENSES/rnnoise-BSD-3-Clause.txt`](LICENSES/rnnoise-BSD-3-Clause.txt).
+
+**PFFFT** (Chromium `third_party/pffft`, revision `6eabe54fa1`): Julien Pommier's FFT library,
+used by the RNN VAD. Based on FFTPACK (NCAR/UCAR) and released under the same terms. Full text in
+[`LICENSES/pffft.txt`](LICENSES/pffft.txt).
+
 ---
 
 ## Abseil (absl)

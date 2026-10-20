@@ -1,6 +1,6 @@
 # AEC3 library build
 
-Recipe for `thirdparty/AEC3/lib/AEC3.lib` (Release) and `AEC3_debug.lib` (Debug): WebRTC's AEC3 echo canceller and noise suppressor plus the Abseil pieces they need, compiled with CMake + Ninja and merged into one static library each.
+Recipe for `thirdparty/AEC3/lib/AEC3.lib` (Release) and `AEC3_debug.lib` (Debug): WebRTC's AEC3 echo canceller, noise suppressor and AGC2 (adaptive digital gain control with its RNN voice activity detector and limiter) plus the Abseil pieces they need, compiled with CMake + Ninja and merged into one static library each.
 
 ## Sources
 
@@ -8,8 +8,9 @@ Recipe for `thirdparty/AEC3/lib/AEC3.lib` (Release) and `AEC3_debug.lib` (Debug)
 |---|---|
 | WebRTC (`https://webrtc.googlesource.com/src`) | `b58dcf8fec` |
 | Abseil (`https://github.com/abseil/abseil-cpp`) | `972e4ab4` |
+| Chromium `third_party` (`https://chromium.googlesource.com/chromium/src/third_party`), only the directories `rnnoise` and `pffft` | `6eabe54fa1` (the revision WebRTC's `DEPS` pins) |
 
-Only the source files listed in `CMakeLists.txt` are compiled. WebRTC's own build system (GN) and its `third_party` tree are not needed.
+Only the source files listed in `CMakeLists.txt` are compiled. WebRTC's own build system (GN) is not needed. The fourth build argument is the directory that contains `third_party/rnnoise` and `third_party/pffft` (e.g. fetched from the gitiles `+archive` tarballs of those two directories at the revision above, each extracted into its own empty directory).
 
 `stubs/` holds four small files of this project's own:
 - `default_task_queue_factory.cc`: a task queue factory AEC3's Environment needs but never runs.
@@ -22,8 +23,8 @@ Only the source files listed in `CMakeLists.txt` are compiled. WebRTC's own buil
 Needs Visual Studio 2026 (MSVC v145) with its bundled CMake and Ninja.
 
 ```
-build.bat Release <webrtc checkout> <abseil-cpp checkout>
-build.bat Debug   <webrtc checkout> <abseil-cpp checkout>
+build.bat Release <webrtc checkout> <abseil-cpp checkout> <chromium third_party parent>
+build.bat Debug   <webrtc checkout> <abseil-cpp checkout> <chromium third_party parent>
 ```
 
 The merged library is written to `build_<Config>\lib\`. Copy it over `thirdparty\AEC3\lib\AEC3.lib` / `AEC3_debug.lib`, then rebuild the plugin and run the tests. If you change revision, refresh the headers under `thirdparty/AEC3/` from the same checkouts.

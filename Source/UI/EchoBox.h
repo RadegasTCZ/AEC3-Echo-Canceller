@@ -8,13 +8,13 @@ namespace aec::ui
 /** Link state shown by the connection dot: green Connected, dim Connecting or Disconnected (capture stopped), warn for Stalled / Error / AEC3 Error. */
 enum class LinkState { Connected, Connecting, Disconnected, Problem };
 
-/** Box "1 - ECHO" (424 x 88): strength pills, Delay and Room rotaries, IN / REF meters,
+/** Box "1 - ECHO" (424 x 96): strength pills, Delay and Room rotaries, IN / REF meters,
     "Hear reference" toggle, connection dot with the captured sample rate. */
 class EchoBox final : public juce::Component,
                       public juce::TooltipClient
 {
 public:
-    static constexpr int kWidth = 424, kHeight = 88;
+    static constexpr int kWidth = 424, kHeight = 96;
 
     explicit EchoBox (AEC3EchoCancellerAudioProcessor&);
 
@@ -41,7 +41,7 @@ public:
 private:
     using Apvts = juce::AudioProcessorValueTreeState;
 
-    static juce::Rectangle<int> connectionArea() { return { 335, 61, 80, 16 }; }
+    static juce::Rectangle<int> connectionArea() { return { 335, 65, 80, 16 }; }
     static void setUpCaption (juce::Label&, const juce::String&);
 
     StrengthSelector strength;

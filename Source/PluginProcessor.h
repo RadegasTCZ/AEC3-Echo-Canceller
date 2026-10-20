@@ -5,10 +5,13 @@
 #include "EchoCancellerEngine.h"
 #include <vector>
 
-class AEC3EchoCancellerAudioProcessor  : public juce::AudioProcessor
+class AEC3EchoCancellerAudioProcessor  : public juce::AudioProcessor,
+                                         private juce::Timer
 {
 public:
     AEC3EchoCancellerAudioProcessor();
+    /** Destroy on the message thread: juce::Timer::stopTimer() does not wait for a watchdog callback
+        already running on another thread, so destroying elsewhere could race with one. */
     ~AEC3EchoCancellerAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -47,6 +50,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getAPVTS() { return parameters; }
+    bool isCaptureWatchdogRunning() const { return isTimerRunning(); }   // test hook
     WasapiLoopbackCapture& getLoopbackCapture() { return loopbackCapture; }
     EchoCancellerEngine& getEchoCancellerEngine() { return echoCancellerEngine; }
 
@@ -55,6 +59,7 @@ public:
     void setAdvancedOpen (bool open)                   { uiMode = open ? "advanced" : "basic"; }
 
 private:
+    void timerCallback() override;   // capture watchdog (message thread)
     void processInternal (juce::AudioBuffer<float>&, bool forceBypass);
 
     juce::AudioProcessorValueTreeState parameters;
@@ -92,6 +97,9 @@ private:
     // Noise suppression
     std::atomic<float>* nsLevelParam = nullptr;
     std::atomic<float>* monitorNoiseParam = nullptr;
+
+    // Level (the AGC values are read through aec::readAgcSettings)
+    std::atomic<float>* limiterEnabledParam = nullptr;
 
     // Device ID — stored outside APVTS (dynamic list doesn't fit APVTS well)
     juce::String selectedDeviceId;

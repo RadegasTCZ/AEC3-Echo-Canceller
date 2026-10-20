@@ -8,6 +8,7 @@ set(CMAKE_C_STANDARD 11)
 # Paths
 # Pass the source checkouts on the command line (see README.md here):
 #   -DWEBRTC_SRC=<webrtc checkout>  -DABSEIL_SRC=<abseil-cpp checkout>
+#   -DCHROMIUM_THIRD_PARTY_SRC=<directory containing third_party/rnnoise and third_party/pffft>
 set(WEBRTC_SRC "" CACHE PATH "WebRTC source checkout (revision b58dcf8fec)")
 set(ABSEIL_SRC "" CACHE PATH "abseil-cpp source checkout (revision 972e4ab4)")
 if(NOT EXISTS "${WEBRTC_SRC}/modules/audio_processing/aec3/echo_canceller3.cc")
@@ -16,6 +17,10 @@ endif()
 if(NOT EXISTS "${ABSEIL_SRC}/absl/base/config.h")
     message(FATAL_ERROR "ABSEIL_SRC must point at an abseil-cpp checkout")
 endif()
+set(CHROMIUM_THIRD_PARTY_SRC "" CACHE PATH "Directory containing Chromium's third_party/rnnoise and third_party/pffft (revision 6eabe54fa1)")
+if(NOT EXISTS "${CHROMIUM_THIRD_PARTY_SRC}/third_party/rnnoise/src/rnn_vad_weights.cc")
+    message(FATAL_ERROR "CHROMIUM_THIRD_PARTY_SRC must contain third_party/rnnoise and third_party/pffft")
+endif()
 set(ABSEIL_INC "${ABSEIL_SRC}")
 set(STUBS_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 
@@ -23,6 +28,7 @@ set(STUBS_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 include_directories(
     ${WEBRTC_SRC}
     ${ABSEIL_INC}
+    ${CHROMIUM_THIRD_PARTY_SRC}
     ${STUBS_DIR}/include
 )
 
@@ -181,6 +187,8 @@ set(RTC_BASE_SRC
 # --- system_wrappers ---
 set(SYSW_SRC
     ${WEBRTC_SRC}/system_wrappers/source/clock.cc
+    # AGC2 limiter/curve call webrtc::metrics:: directly; histograms stay inactive unless Enable() is called
+    ${WEBRTC_SRC}/system_wrappers/source/metrics.cc
 )
 
 # --- common_audio (generic + SSE, no MIPS/NEON) ---
@@ -276,6 +284,45 @@ set(NS_SRC
     ${WEBRTC_SRC}/modules/audio_processing/ns/wiener_filter.cc
 )
 
+# --- Adaptive digital gain control 2 (modules/audio_processing/agc2/, BUILD.gn targets
+#     adaptive_digital_gain_controller, gain_applier, saturation_protector, speech_level_estimator,
+#     noise_level_estimator, vad_wrapper, cpu_features, fixed_digital, rnn_vad*) ---
+set(AGC2_SRC
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/biquad_filter.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/adaptive_digital_gain_controller.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/cpu_features.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/fixed_digital_level_estimator.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/gain_applier.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/interpolated_gain_curve.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/limiter.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/limiter_db_gain_curve.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/noise_level_estimator.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/saturation_protector.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/saturation_protector_buffer.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/speech_level_estimator.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/speech_level_estimator_experimental_impl.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/speech_level_estimator_impl.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/vad_wrapper.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/auto_correlation.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/features_extraction.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/lp_residual.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/pitch_search.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/pitch_search_internal.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/rnn.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/rnn_fc.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/rnn_gru.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/spectral_features.cc
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/spectral_features_internal.cc
+    ${WEBRTC_SRC}/modules/audio_processing/utility/pffft_wrapper.cc
+    # Chromium third_party: RNN VAD weights and PFFFT
+    ${CHROMIUM_THIRD_PARTY_SRC}/third_party/rnnoise/src/rnn_vad_weights.cc
+    ${CHROMIUM_THIRD_PARTY_SRC}/third_party/pffft/src/pffft.c
+)
+
+set(AGC2_AVX2_SRC
+    ${WEBRTC_SRC}/modules/audio_processing/agc2/rnn_vad/vector_math_avx2.cc
+)
+
 # --- Abseil (built as CMake subdirectory) ---
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(ABSL_BUILD_TESTING OFF)
@@ -297,6 +344,8 @@ add_library(AEC3 STATIC
     ${AEC3_CORE_SRC}
     ${AEC3_AVX2_SRC}
     ${NS_SRC}
+    ${AGC2_SRC}
+    ${AGC2_AVX2_SRC}
     ${API_SRC}
     ${ENV_SRC}
     ${APM_SRC}
@@ -312,9 +361,22 @@ if(MSVC)
     set_source_files_properties(
         ${AEC3_AVX2_SRC}
         ${COMMON_AUDIO_AVX2_SRC}
+        ${AGC2_AVX2_SRC}
         PROPERTIES COMPILE_FLAGS "/arch:AVX2"
     )
 endif()
+
+# pffft.c needs M_PI from <math.h> on Windows (Chromium's pffft config defines this)
+set_source_files_properties(
+    ${CHROMIUM_THIRD_PARTY_SRC}/third_party/pffft/src/pffft.c
+    PROPERTIES COMPILE_DEFINITIONS "_USE_MATH_DEFINES"
+)
+
+# mutex.h pulls in <windows.h> before <winsock2.h> unless lean-and-mean is set
+set_source_files_properties(
+    ${WEBRTC_SRC}/system_wrappers/source/metrics.cc
+    PROPERTIES COMPILE_DEFINITIONS "WIN32_LEAN_AND_MEAN"
+)
 
 # Link abseil libraries needed by WebRTC
 target_link_libraries(AEC3 PRIVATE

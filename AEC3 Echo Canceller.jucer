@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="dMynSa" name="AEC3 Echo Canceller" projectType="audioplug"
               useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
-              pluginVST3Category="External,Filter,Fx" version="6.0.0" companyName="RadegasTCZ"
+              pluginVST3Category="External,Filter,Fx" version="6.1.0" companyName="RadegasTCZ"
               companyCopyright="2026" companyWebsite="https://github.com/RadegasTCZ"
               companyEmail="radegast2321@gmail.com" pluginFormats="buildStandalone,buildVST,buildVST3"
               pluginManufacturer="RadegasTCZ" pluginManufacturerCode="RDTV" pluginCode="AE3C" pluginName="AEC3 Echo Canceller"
@@ -37,6 +37,8 @@
             file="Source/Strength.h"/>
       <FILE id="aec018" name="Strength.cpp" compile="1" resource="0"
             file="Source/Strength.cpp"/>
+      <FILE id="aec0ai" name="AgcPresets.h" compile="0" resource="0" file="Source/AgcPresets.h"/>
+      <FILE id="aec0aj" name="AgcPresets.cpp" compile="1" resource="0" file="Source/AgcPresets.cpp"/>
       <FILE id="aec019" name="ParamIds.h" compile="0" resource="0" file="Source/ParamIds.h"/>
       <FILE id="aec020" name="StateMigration.h" compile="0" resource="0"
             file="Source/StateMigration.h"/>
@@ -44,6 +46,10 @@
             file="Source/StateMigration.cpp"/>
       <FILE id="aec022" name="Resampler.h" compile="0" resource="0" file="Source/Resampler.h"/>
       <FILE id="aec023" name="Resampler.cpp" compile="1" resource="0" file="Source/Resampler.cpp"/>
+      <FILE id="aec0lh" name="OutputLimiter.h" compile="0" resource="0" file="Source/OutputLimiter.h"/>
+      <FILE id="aec0lc" name="OutputLimiter.cpp" compile="1" resource="0" file="Source/OutputLimiter.cpp"/>
+      <FILE id="aec0ah" name="AgcStage.h" compile="0" resource="0" file="Source/AgcStage.h"/>
+      <FILE id="aec0ac" name="AgcStage.cpp" compile="1" resource="0" file="Source/AgcStage.cpp"/>
       <FILE id="aec024" name="LoopbackSource.h" compile="0" resource="0" file="Source/LoopbackSource.h"/>
       <FILE id="aec025" name="DelayLine.h" compile="0" resource="0" file="Source/DelayLine.h"/>
       <FILE id="aec026" name="PeakHold.h" compile="0" resource="0" file="Source/PeakHold.h"/>
@@ -64,8 +70,12 @@
       <FILE id="aecUi11c" name="Header.cpp" compile="1" resource="0" file="Source/UI/Header.cpp"/>
       <FILE id="aecUi12" name="EchoBox.h" compile="0" resource="0" file="Source/UI/EchoBox.h"/>
       <FILE id="aecUi12c" name="EchoBox.cpp" compile="1" resource="0" file="Source/UI/EchoBox.cpp"/>
-      <FILE id="aecUi13" name="NoiseBox.h" compile="0" resource="0" file="Source/UI/NoiseBox.h"/>
-      <FILE id="aecUi13c" name="NoiseBox.cpp" compile="1" resource="0" file="Source/UI/NoiseBox.cpp"/>
+      <FILE id="aecUiV1h" name="VoiceBox.h" compile="0" resource="0" file="Source/UI/VoiceBox.h"/>
+      <FILE id="aecUiV1c" name="VoiceBox.cpp" compile="1" resource="0" file="Source/UI/VoiceBox.cpp"/>
+      <FILE id="aecUiL0h" name="AgcPresetSelector.h" compile="0" resource="0" file="Source/UI/AgcPresetSelector.h"/>
+      <FILE id="aecUiL0c" name="AgcPresetSelector.cpp" compile="1" resource="0" file="Source/UI/AgcPresetSelector.cpp"/>
+      <FILE id="aecUiL1h" name="ReductionMeter.h" compile="0" resource="0" file="Source/UI/ReductionMeter.h"/>
+      <FILE id="aecUiL1c" name="ReductionMeter.cpp" compile="1" resource="0" file="Source/UI/ReductionMeter.cpp"/>
       <FILE id="aecUiXComph" name="CompactSlider.h" compile="0" resource="0" file="Source/UI/CompactSlider.h"/>
       <FILE id="aecUiXCompcpp" name="CompactSlider.cpp" compile="1" resource="0" file="Source/UI/CompactSlider.cpp"/>
       <FILE id="aecUiXOtheh" name="OtherTab.h" compile="0" resource="0" file="Source/UI/OtherTab.h"/>
